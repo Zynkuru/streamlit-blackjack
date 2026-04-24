@@ -37,79 +37,115 @@ HAND_BADGE = {
 # ---------------------------------------------------------------------------
 
 def make_deck():
-    d = [r + s for s in SUITS for r in RANKS]
-    random.shuffle(d)
-    return d
+    """Build a fresh, shuffled 52-card deck like ['7H','AD','10C',...]."""
+    deck = []
+    for s in SUITS:
+        for r in RANKS:
+            deck.append(r + s)
+    random.shuffle(deck)
+    return deck
 
 def card_value(card):
+    """Return the blackjack value of one card. Aces count as 11 here."""
     r = card[:-1]
-    if r in ("J", "Q", "K"): return 10
-    if r == "A":              return 11
+    if r == "J" or r == "Q" or r == "K":
+        return 10
+    if r == "A":
+        return 11
     return int(r)
 
 def hand_value(hand):
-    total = sum(card_value(c) for c in hand)
-    aces  = sum(1 for c in hand if c[:-1] == "A")
-    while total > 21 and aces:
-        total -= 10; aces -= 1
+    """Sum the cards, then downgrade aces from 11 to 1 if we'd bust."""
+    total = 0
+    aces = 0
+    for c in hand:
+        total += card_value(c)
+        if c[:-1] == "A":
+            aces += 1
+    while total > 21 and aces > 0:
+        total -= 10
+        aces -= 1
     return total
 
 def card_url(card):
+    """URL for the card image on deckofcardsapi.com (or the face-down back)."""
     if card == "back":
         return "https://deckofcardsapi.com/static/img/back.png"
-    r, s = card[:-1], card[-1]
-    return f"https://deckofcardsapi.com/static/img/{'0' if r == '10' else r}{s}.png"
+    r = card[:-1]
+    s = card[-1]
+    # The API uses "0" in the filename for 10 (e.g. "0H.png")
+    if r == "10":
+        r = "0"
+    return f"https://deckofcardsapi.com/static/img/{r}{s}.png"
 
 # ---------------------------------------------------------------------------
 # Session state
 # ---------------------------------------------------------------------------
 
 def init_state():
-    for k, v in {
-        "deck":         [],
-        "dealer":       [],
-        "hands":        [[], [], []],
-        "bets":         [0, 0, 0],
-        "hand_statuses":["idle", "idle", "idle"],
-        "active_hand":  -1,
-        "status":       "betting",
-        "bankroll":     STARTING_BANKROLL,
+    """Set up default values in st.session_state on the first run."""
+    defaults = {
+        "deck": [],
+        "dealer": [],
+        "hands": [[], [], []],
+        "bets": [0, 0, 0],
+        "hand_statuses": ["idle", "idle", "idle"],
+        "active_hand": -1,
+        "status": "betting",
+        "bankroll": STARTING_BANKROLL,
         "selected_hand": 0,
-    }.items():
-        if k not in st.session_state:
-            st.session_state[k] = v
+    }
+    for key in defaults:
+        if key not in st.session_state:
+            st.session_state[key] = defaults[key]
 
 # ---------------------------------------------------------------------------
 # Game actions
 # ---------------------------------------------------------------------------
 
 def place_bet(amount):
+    """Move `amount` from the bankroll onto the currently selected hand."""
     ss = st.session_state
-    if ss.status != "betting" or amount not in CHIP_VALUES: return
-    if amount > ss.bankroll: return
+    if ss.status != "betting":
+        return
+    if amount not in CHIP_VALUES:
+        return
+    if amount > ss.bankroll:
+        return
     ss.bankroll -= amount
     ss.bets[ss.selected_hand] += amount
 
 def clear_bet(hand_idx):
+    """Put the chips on hand `hand_idx` back into the bankroll."""
     ss = st.session_state
-    if ss.status != "betting": return
+    if ss.status != "betting":
+        return
     ss.bankroll += ss.bets[hand_idx]
     ss.bets[hand_idx] = 0
 
 def _settle_hand(i):
-    ss  = st.session_state
+    """Pay out hand `i` according to its final status."""
+    ss = st.session_state
     bet = ss.bets[i]
-    hs  = ss.hand_statuses[i]
+    hs = ss.hand_statuses[i]
     if hs == "blackjack_win":
         ss.bankroll += bet + (bet * 3) // 2
     elif hs == "won":
         ss.bankroll += bet * 2
     elif hs == "push":
         ss.bankroll += bet
+    # bust / lost: the bet was already subtracted in place_bet
 
 def _dealer_play():
+    """Dealer draws until 17+, then compare each still-in hand to the dealer."""
     ss = st.session_state
-    has_stand = any(ss.hand_statuses[i] == "stand" for i in range(NUM_HANDS))
+
+    # Does any player hand actually need the dealer to draw?
+    has_stand = False
+    for i in range(NUM_HANDS):
+        if ss.hand_statuses[i] == "stand":
+            has_stand = True
+
     if has_stand:
         while hand_value(ss.dealer) < 17:
             ss.dealer.append(ss.deck.pop())
@@ -119,20 +155,26 @@ def _dealer_play():
         if ss.bets[i] <= 0:
             continue
         hs = ss.hand_statuses[i]
-        if hs in ("bust", "blackjack_win", "push", "lost"):
+        # Skip hands that already have a final outcome
+        if hs == "bust" or hs == "blackjack_win" or hs == "push" or hs == "lost":
             continue
         if hs == "stand":
             pv = hand_value(ss.hands[i])
-            if dv > 21:           ss.hand_statuses[i] = "won"
-            elif pv > dv:         ss.hand_statuses[i] = "won"
-            elif dv > pv:         ss.hand_statuses[i] = "lost"
-            else:                 ss.hand_statuses[i] = "push"
+            if dv > 21:
+                ss.hand_statuses[i] = "won"
+            elif pv > dv:
+                ss.hand_statuses[i] = "won"
+            elif dv > pv:
+                ss.hand_statuses[i] = "lost"
+            else:
+                ss.hand_statuses[i] = "push"
             _settle_hand(i)
 
-    ss.status      = "resolved"
+    ss.status = "resolved"
     ss.active_hand = -1
 
 def _advance_hand():
+    """Move play to the next waiting hand, or let the dealer play if none."""
     ss = st.session_state
     for i in range(ss.active_hand + 1, NUM_HANDS):
         if ss.hand_statuses[i] == "waiting":
@@ -142,69 +184,102 @@ def _advance_hand():
     _dealer_play()
 
 def deal_hand():
+    """Start a new round: shuffle, deal 2 cards to each bet hand + dealer."""
     ss = st.session_state
-    if ss.status != "betting" or sum(ss.bets) == 0: return
+    if ss.status != "betting":
+        return
+    if sum(ss.bets) == 0:
+        return
 
-    ss.deck  = make_deck()
+    ss.deck = make_deck()
     ss.hands = [[], [], []]
     ss.dealer = []
-    active   = [i for i, b in enumerate(ss.bets) if b > 0]
 
+    # Which hand indices actually have a bet on them
+    active = []
+    for i in range(NUM_HANDS):
+        if ss.bets[i] > 0:
+            active.append(i)
+
+    # Deal two rounds: one card to each active hand, then one to the dealer
     for _ in range(2):
         for i in active:
             ss.hands[i].append(ss.deck.pop())
         ss.dealer.append(ss.deck.pop())
 
+    # Check for blackjacks (dealer + each active player)
     dealer_bj = hand_value(ss.dealer) == 21
-    statuses  = ["idle"] * NUM_HANDS
+    statuses = ["idle"] * NUM_HANDS
     for i in active:
         player_bj = hand_value(ss.hands[i]) == 21
-        if player_bj and dealer_bj:  statuses[i] = "push"
-        elif player_bj:              statuses[i] = "blackjack_win"
-        elif dealer_bj:              statuses[i] = "lost"
-        else:                        statuses[i] = "waiting"
+        if player_bj and dealer_bj:
+            statuses[i] = "push"
+        elif player_bj:
+            statuses[i] = "blackjack_win"
+        elif dealer_bj:
+            statuses[i] = "lost"
+        else:
+            statuses[i] = "waiting"
     ss.hand_statuses = statuses
 
+    # Settle hands that are already decided before play starts
     for i in active:
-        if ss.hand_statuses[i] in ("blackjack_win", "push", "lost"):
+        hs = ss.hand_statuses[i]
+        if hs == "blackjack_win" or hs == "push" or hs == "lost":
             _settle_hand(i)
 
-    playable = [i for i in active if ss.hand_statuses[i] == "waiting"]
-    if playable:
-        ss.hand_statuses[playable[0]] = "active"
-        ss.active_hand = playable[0]
-        ss.status      = "playing"
+    # Find the first hand that still needs the player to act
+    first_playable = -1
+    for i in active:
+        if ss.hand_statuses[i] == "waiting":
+            first_playable = i
+            break
+
+    if first_playable >= 0:
+        ss.hand_statuses[first_playable] = "active"
+        ss.active_hand = first_playable
+        ss.status = "playing"
     else:
         ss.active_hand = -1
-        ss.status      = "resolved"
+        ss.status = "resolved"
 
 def hit():
-    ss  = st.session_state
+    """Player takes a card on the active hand; 22+ means bust → move on."""
+    ss = st.session_state
     idx = ss.active_hand
-    if ss.status != "playing" or idx < 0: return
+    if ss.status != "playing":
+        return
+    if idx < 0:
+        return
     ss.hands[idx].append(ss.deck.pop())
     if hand_value(ss.hands[idx]) > 21:
         ss.hand_statuses[idx] = "bust"
         _advance_hand()
 
 def stand():
-    ss  = st.session_state
+    """Player keeps their current total; move to the next hand."""
+    ss = st.session_state
     idx = ss.active_hand
-    if ss.status != "playing" or idx < 0: return
+    if ss.status != "playing":
+        return
+    if idx < 0:
+        return
     ss.hand_statuses[idx] = "stand"
     _advance_hand()
 
 def new_hand():
+    """Clear the table for the next round (keep the bankroll)."""
     ss = st.session_state
-    ss.hands         = [[], [], []]
-    ss.dealer        = []
-    ss.bets          = [0, 0, 0]
+    ss.hands = [[], [], []]
+    ss.dealer = []
+    ss.bets = [0, 0, 0]
     ss.hand_statuses = ["idle"] * NUM_HANDS
-    ss.active_hand   = -1
-    ss.status        = "betting"
+    ss.active_hand = -1
+    ss.status = "betting"
     ss.selected_hand = 0
 
 def reset_bankroll():
+    """Player went broke — restart with $1000 and a fresh round."""
     st.session_state.bankroll = STARTING_BANKROLL
     new_hand()
 
@@ -629,13 +704,12 @@ def inject_styles():
 # ---------------------------------------------------------------------------
 
 def render_cards(cards, width=72):
-    """Render a hand's cards as a centered, animated flex row.
+    """Show a row of cards centered, with a staggered deal-in animation.
 
-    Uses raw HTML (<img>) instead of st.image for three reasons:
-      1. Centering: flex + justify-content avoids the left-biased column grid.
-      2. Animation: each card gets a CSS keyframe with a staggered delay.
-      3. No phantom chip on hover: st.image wraps images in a Streamlit
-         button (fullscreen toggle) that picked up our chip-button styling.
+    We build raw <img> tags instead of using st.image, because st.image:
+      - lays cards out in a column grid (so they end up left-aligned),
+      - wraps every image in a hidden fullscreen button that our chip CSS
+        was accidentally styling as a red chip on hover.
     """
     if not cards:
         st.markdown(
@@ -644,45 +718,64 @@ def render_cards(cards, width=72):
         )
         return
 
-    imgs = []
+    # Build the row one <img> at a time, with a small stagger per card
+    html = '<div class="cards-row">'
     for i, card in enumerate(cards):
         delay = f"{i * 0.09:.2f}s"
-        imgs.append(
-            f'<img class="card-img" src="{card_url(card)}" '
-            f'style="width:{width}px; animation-delay:{delay};" '
-            f'alt="{card}">'
-        )
-    st.markdown(
-        f'<div class="cards-row">{"".join(imgs)}</div>',
-        unsafe_allow_html=True,
-    )
+        html += f'<img class="card-img" src="{card_url(card)}" '
+        html += f'style="width:{width}px; animation-delay:{delay};" '
+        html += f'alt="{card}">'
+    html += '</div>'
+    st.markdown(html, unsafe_allow_html=True)
 
 
 def render_bet_circle(bet, status):
-    resolved_win  = status in ("won", "blackjack_win")
-    resolved_lose = status in ("bust", "lost")
-    resolved_push = status == "push"
-    is_active     = status == "active"
-
-    if resolved_win:
-        bg, border, color = "rgba(46,204,113,0.16)", "#2ecc71", "#2ecc71"
-    elif resolved_lose:
-        bg, border, color = "rgba(231,76,60,0.16)",  "#e74c3c", "#e74c3c"
-    elif resolved_push:
-        bg, border, color = "rgba(150,160,150,0.16)","#95a5a6", "#95a5a6"
-    elif is_active:
-        bg, border, color = "rgba(212,175,55,0.18)", "#d4af37", "#d4af37"
+    """Draw the static dashed circle under a hand (once cards are dealt)."""
+    # Pick colors based on the current status
+    if status == "won" or status == "blackjack_win":
+        bg = "rgba(46,204,113,0.16)"
+        border = "#2ecc71"
+        color = "#2ecc71"
+    elif status == "bust" or status == "lost":
+        bg = "rgba(231,76,60,0.16)"
+        border = "#e74c3c"
+        color = "#e74c3c"
+    elif status == "push":
+        bg = "rgba(150,160,150,0.16)"
+        border = "#95a5a6"
+        color = "#95a5a6"
+    elif status == "active":
+        bg = "rgba(212,175,55,0.18)"
+        border = "#d4af37"
+        color = "#d4af37"
     elif bet > 0:
-        bg, border, color = "rgba(212,175,55,0.1)",  "rgba(212,175,55,0.6)", "#efd58a"
+        bg = "rgba(212,175,55,0.1)"
+        border = "rgba(212,175,55,0.6)"
+        color = "#efd58a"
     else:
-        bg, border, color = "rgba(0,0,0,0.18)",      "rgba(245,236,215,0.25)", "rgba(245,236,215,0.45)"
+        bg = "rgba(0,0,0,0.18)"
+        border = "rgba(245,236,215,0.25)"
+        color = "rgba(245,236,215,0.45)"
 
-    glow = "0 0 22px rgba(212,175,55,0.55)" if is_active else "none"
+    # Gold glow only when this hand is the active one
+    if status == "active":
+        glow = "0 0 22px rgba(212,175,55,0.55)"
+    else:
+        glow = "none"
 
+    # Inside-the-circle text: dollar amount or the word "BET"
     if bet > 0:
-        text, fsize, fw, ls, font = f"${bet}", "1.6rem", "700", "0", "'Playfair Display',serif"
+        text = f"${bet}"
+        fsize = "1.6rem"
+        fw = "700"
+        ls = "0"
+        font = "'Playfair Display',serif"
     else:
-        text, fsize, fw, ls, font = "BET", "0.85rem", "400", "0.22em", "'Bebas Neue',Impact,sans-serif"
+        text = "BET"
+        fsize = "0.85rem"
+        fw = "400"
+        ls = "0.22em"
+        font = "'Bebas Neue',Impact,sans-serif"
 
     st.markdown(f"""
     <div style="
@@ -701,10 +794,20 @@ def render_bet_circle(bet, status):
 
 
 def render_hand_badge(status):
-    text, color = HAND_BADGE.get(status, ("", ""))
+    """Small 'Your Turn', 'Bust', 'Win!' etc. pill under a hand."""
+    # HAND_BADGE is the dict defined at the top of the file
+    if status in HAND_BADGE:
+        text, color = HAND_BADGE[status]
+    else:
+        text = ""
+        color = ""
+
     if not text:
+        # Empty spacer so the layout height doesn't jump
         st.markdown('<div style="height:22px;"></div>', unsafe_allow_html=True)
         return
+
+    # Add alpha suffixes to the hex color for the badge background/border
     bg = color + "22"
     border = color + "66"
     st.markdown(f"""
@@ -721,20 +824,35 @@ def render_hand_badge(status):
 
 
 def render_hand_column(hand_idx):
-    ss     = st.session_state
-    hand   = ss.hands[hand_idx]
-    bet    = ss.bets[hand_idx]
+    """Draw one of the three player columns: label, bet circle, cards, badge."""
+    ss = st.session_state
+    hand = ss.hands[hand_idx]
+    bet = ss.bets[hand_idx]
     status = ss.hand_statuses[hand_idx]
-    val    = hand_value(hand) if hand else 0
 
-    is_betting  = ss.status == "betting"
-    is_active   = (status == "active")
+    # Current hand total (0 if no cards yet)
+    if hand:
+        val = hand_value(hand)
+    else:
+        val = 0
+
+    is_betting = ss.status == "betting"
+    is_active = status == "active"
     is_selected = is_betting and ss.selected_hand == hand_idx
     highlighted = is_active or is_selected
 
-    label_color = "#d4af37" if highlighted else "#e5d2a0"
-    shadow      = "text-shadow:0 0 14px rgba(212,175,55,0.55);" if highlighted else ""
-    label       = f"HAND {hand_idx + 1}" + (f"  ·  {val}" if val else "")
+    # Title color + glow: gold when this hand is the focus, cream otherwise
+    if highlighted:
+        label_color = "#d4af37"
+        shadow = "text-shadow:0 0 14px rgba(212,175,55,0.55);"
+    else:
+        label_color = "#e5d2a0"
+        shadow = ""
+
+    # Build the label like "HAND 2" or "HAND 2  ·  17"
+    label = f"HAND {hand_idx + 1}"
+    if val:
+        label = label + f"  ·  {val}"
 
     st.markdown(
         f'<div style="font-family:\'Bebas Neue\',Impact,sans-serif;'
@@ -743,6 +861,8 @@ def render_hand_column(hand_idx):
         unsafe_allow_html=True,
     )
 
+    # During betting the circle is a real button (so you can click to select
+    # which hand you're betting on). Otherwise it's just a static div.
     if is_betting:
         render_bet_button(hand_idx, bet, is_selected)
     else:
@@ -753,9 +873,20 @@ def render_hand_column(hand_idx):
 
 
 def render_bet_button(hand_idx, bet, is_selected):
-    """The bet spot during betting — clickable to select that hand."""
-    label = f"${bet}" if bet > 0 else "BET"
-    btype = "primary" if is_selected else "secondary"
+    """The bet spot during betting — a real button that selects that hand."""
+    # Label: dollar amount if we've bet, otherwise "BET"
+    if bet > 0:
+        label = f"${bet}"
+    else:
+        label = "BET"
+
+    # Primary style highlights the currently selected hand
+    if is_selected:
+        btype = "primary"
+    else:
+        btype = "secondary"
+
+    # Wrap in a container with a known key so the CSS can target it
     with st.container(key=f"bet_circle_{hand_idx}"):
         if st.button(label, key=f"bet_btn_{hand_idx}", type=btype):
             st.session_state.selected_hand = hand_idx
@@ -770,9 +901,10 @@ def main():
     inject_styles()
     init_state()
 
-    ss          = st.session_state
-    is_betting  = ss.status == "betting"
-    is_playing  = ss.status == "playing"
+    # Pull out the state flags once so the rest of main() is easy to read
+    ss = st.session_state
+    is_betting = ss.status == "betting"
+    is_playing = ss.status == "playing"
     is_resolved = ss.status == "resolved"
     reveal_dealer = is_resolved
     broke = ss.bankroll == 0 and sum(ss.bets) == 0 and is_betting
@@ -809,13 +941,24 @@ def main():
 
     # ── Dealer section ───────────────────────────────────────────────────
     st.markdown('<div class="dealer-area">', unsafe_allow_html=True)
-    if ss.dealer:
-        d_cards = ss.dealer if reveal_dealer else [ss.dealer[0], "back"]
-        d_val   = hand_value(ss.dealer) if reveal_dealer else card_value(ss.dealer[0])
-    else:
-        d_cards, d_val = [], 0
 
-    st.subheader("Dealer" + (f"  —  {d_val}" if d_val else ""))
+    # Decide which dealer cards and total to show. The hole (second) card
+    # stays face-down until the round is resolved.
+    if ss.dealer:
+        if reveal_dealer:
+            d_cards = ss.dealer
+            d_val = hand_value(ss.dealer)
+        else:
+            d_cards = [ss.dealer[0], "back"]
+            d_val = card_value(ss.dealer[0])
+    else:
+        d_cards = []
+        d_val = 0
+
+    if d_val:
+        st.subheader(f"Dealer  —  {d_val}")
+    else:
+        st.subheader("Dealer")
     render_cards(d_cards, width=72)
     st.markdown('</div>', unsafe_allow_html=True)
 
@@ -825,9 +968,12 @@ def main():
     # ── Player hand columns (3 bet zones) ────────────────────────────────
     st.markdown('<div class="player-area">', unsafe_allow_html=True)
     col0, col1, col2 = st.columns(3)
-    with col0: render_hand_column(0)
-    with col1: render_hand_column(1)
-    with col2: render_hand_column(2)
+    with col0:
+        render_hand_column(0)
+    with col1:
+        render_hand_column(1)
+    with col2:
+        render_hand_column(2)
     st.markdown('</div>', unsafe_allow_html=True)
 
     # ── Controls ─────────────────────────────────────────────────────────
@@ -837,53 +983,64 @@ def main():
     st.metric("Bankroll", f"${ss.bankroll}")
 
     if is_betting and not broke:
-        # Chips — the wrapping container gives a stable `st-key-chips_row`
-        # class that the chip CSS in inject_styles targets.
+        # Hint line telling the user which hand the chips will land on
         selected = ss.selected_hand + 1
         st.markdown(
             f'<p class="section-label">Betting on Hand {selected}  '
             '<span style="opacity:0.6;">— click a bet circle to switch</span></p>',
             unsafe_allow_html=True,
         )
+
+        # Chip row — the wrapping container gives a stable `st-key-chips_row`
+        # class, which is what the chip CSS in inject_styles() targets.
         with st.container(key="chips_row"):
             chip_cols = st.columns(len(CHIP_VALUES))
-            for i, value in enumerate(CHIP_VALUES):
+            for i in range(len(CHIP_VALUES)):
+                value = CHIP_VALUES[i]
                 with chip_cols[i]:
-                    if st.button(f"${value}", key=f"chip_{value}",
-                                 disabled=value > ss.bankroll):
+                    too_rich = value > ss.bankroll
+                    if st.button(f"${value}", key=f"chip_{value}", disabled=too_rich):
                         place_bet(value)
                         st.rerun()
 
-        # Deal / Clear
+        # Deal / Clear Bets — both disabled if no chips are down
         st.write("")
+        no_bets = sum(ss.bets) == 0
         d_col, c_col = st.columns(2)
-        if d_col.button("Deal", disabled=sum(ss.bets) == 0,
-                         type="primary", use_container_width=True, key="btn_deal"):
-            deal_hand(); st.rerun()
-        if c_col.button("Clear Bets", disabled=sum(ss.bets) == 0,
-                         use_container_width=True, key="btn_clear"):
-            for i in range(NUM_HANDS): clear_bet(i)
+        if d_col.button("Deal", disabled=no_bets,
+                        type="primary", use_container_width=True, key="btn_deal"):
+            deal_hand()
+            st.rerun()
+        if c_col.button("Clear Bets", disabled=no_bets,
+                        use_container_width=True, key="btn_clear"):
+            for i in range(NUM_HANDS):
+                clear_bet(i)
             st.rerun()
 
     elif is_playing:
         active_idx = ss.active_hand
-        st.caption(f"Playing Hand {active_idx + 1}  —  value: {hand_value(ss.hands[active_idx])}")
+        active_val = hand_value(ss.hands[active_idx])
+        st.caption(f"Playing Hand {active_idx + 1}  —  value: {active_val}")
         h_col, s_col = st.columns(2)
-        if h_col.button("Hit",   type="primary", use_container_width=True, key="btn_hit"):
-            hit(); st.rerun()
+        if h_col.button("Hit", type="primary", use_container_width=True, key="btn_hit"):
+            hit()
+            st.rerun()
         if s_col.button("Stand", use_container_width=True, key="btn_stand"):
-            stand(); st.rerun()
+            stand()
+            st.rerun()
 
     elif is_resolved:
         if st.button("Next Hand", type="primary",
                      use_container_width=True, key="btn_next"):
-            new_hand(); st.rerun()
+            new_hand()
+            st.rerun()
 
     if broke:
         st.warning("You're out of chips!")
         if st.button("Reset Bankroll", type="primary",
                      use_container_width=True, key="btn_reset"):
-            reset_bankroll(); st.rerun()
+            reset_bankroll()
+            st.rerun()
 
     # ── Table bottom rail ────────────────────────────────────────────────
     st.markdown('</div>', unsafe_allow_html=True)
