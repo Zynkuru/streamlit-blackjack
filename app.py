@@ -1,208 +1,215 @@
 """
-Blackjack with betting — a pure-Python Streamlit app.
+Blackjack — 3 hands, pure-Python Streamlit app.
 
 Run locally with:
     streamlit run app.py
-
-All game logic and UI are implemented in Python using Streamlit.
-No HTML/CSS/JS files required.
 """
 
 import random
 import streamlit as st
-import streamlit.components.v1 as components
 
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
 
-SUITS = ["H", "D", "C", "S"]
-RANKS = ["A", "2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K"]
+SUITS  = ["H", "D", "C", "S"]
+RANKS  = ["A","2","3","4","5","6","7","8","9","10","J","Q","K"]
+CHIP_VALUES       = [1, 5, 25, 100, 500]
+STARTING_BANKROLL = 1_000
+NUM_HANDS         = 3
 
-CHIP_VALUES = [1, 5, 25, 100, 500]
-STARTING_BANKROLL = 1000
-
-STATUS_TEXT = {
-    "betting": "Place your bet",
-    "playing": "",
-    "blackjack": "Blackjack! Pays 3 to 2",
-    "player_bust": "Bust",
-    "dealer_bust": "Dealer busts — you win!",
-    "player_wins": "You win!",
-    "dealer_wins": "Dealer wins",
-    "dealer_blackjack": "Dealer has blackjack",
-    "push": "Push",
+HAND_BADGE = {
+    "idle":          ("",              ""),
+    "waiting":       ("Waiting",       "#7f8c8d"),
+    "active":        ("Your Turn ▶",   "#d4af37"),
+    "bust":          ("Bust",          "#e74c3c"),
+    "stand":         ("Stand",         "#7f8c8d"),
+    "blackjack":     ("Blackjack!",    "#d4af37"),
+    "blackjack_win": ("Blackjack ♠",   "#f0d060"),
+    "won":           ("Win!",          "#2ecc71"),
+    "lost":          ("Lost",          "#e74c3c"),
+    "push":          ("Push",          "#95a5a6"),
 }
-
-WIN_STATUSES = {"blackjack", "dealer_bust", "player_wins"}
-LOSE_STATUSES = {"player_bust", "dealer_wins", "dealer_blackjack"}
-
-# Casino chip visual config: (value, gradient, text_color, border_color, highlight)
-CHIP_CONFIG = [
-    (1,   "linear-gradient(145deg,#f5f5f5 0%,#d0d0d0 50%,#b0b0b0 100%)", "#222", "#888", "rgba(255,255,255,0.6)"),
-    (5,   "linear-gradient(145deg,#e74c3c 0%,#c0392b 50%,#a93226 100%)", "#fff", "#7b241c", "rgba(255,140,130,0.5)"),
-    (25,  "linear-gradient(145deg,#2ecc71 0%,#27ae60 50%,#1e8449 100%)", "#fff", "#145a32", "rgba(100,220,140,0.5)"),
-    (100, "linear-gradient(145deg,#5d6d7e 0%,#34495e 50%,#2c3e50 100%)", "#fff", "#17202a", "rgba(150,170,190,0.4)"),
-    (500, "linear-gradient(145deg,#a569bd 0%,#8e44ad 50%,#7d3c98 100%)", "#fff", "#5b2c6f", "rgba(200,150,220,0.5)"),
-]
-
 
 # ---------------------------------------------------------------------------
 # Card utilities
 # ---------------------------------------------------------------------------
 
 def make_deck():
-    deck = [rank + suit for suit in SUITS for rank in RANKS]
-    random.shuffle(deck)
-    return deck
-
+    d = [r + s for s in SUITS for r in RANKS]
+    random.shuffle(d)
+    return d
 
 def card_value(card):
-    rank = card[:-1]
-    if rank in ("J", "Q", "K"):
-        return 10
-    if rank == "A":
-        return 11
-    return int(rank)
-
+    r = card[:-1]
+    if r in ("J", "Q", "K"): return 10
+    if r == "A":              return 11
+    return int(r)
 
 def hand_value(hand):
     total = sum(card_value(c) for c in hand)
-    aces = sum(1 for c in hand if c[:-1] == "A")
-    while total > 21 and aces > 0:
-        total -= 10
-        aces -= 1
+    aces  = sum(1 for c in hand if c[:-1] == "A")
+    while total > 21 and aces:
+        total -= 10; aces -= 1
     return total
 
-
-def card_image_url(card):
+def card_url(card):
     if card == "back":
         return "https://deckofcardsapi.com/static/img/back.png"
-    rank = card[:-1]
-    suit = card[-1]
-    r = "0" if rank == "10" else rank
-    return f"https://deckofcardsapi.com/static/img/{r}{suit}.png"
-
+    r, s = card[:-1], card[-1]
+    return f"https://deckofcardsapi.com/static/img/{'0' if r == '10' else r}{s}.png"
 
 # ---------------------------------------------------------------------------
 # Session state
 # ---------------------------------------------------------------------------
 
 def init_state():
-    defaults = {
-        "deck": [],
-        "player": [],
-        "dealer": [],
-        "status": "betting",
-        "bankroll": STARTING_BANKROLL,
-        "bet": 0,
-    }
-    for key, value in defaults.items():
-        if key not in st.session_state:
-            st.session_state[key] = value
-
+    for k, v in {
+        "deck":         [],
+        "dealer":       [],
+        "hands":        [[], [], []],
+        "bets":         [0, 0, 0],
+        "hand_statuses":["idle", "idle", "idle"],
+        "active_hand":  -1,
+        "status":       "betting",
+        "bankroll":     STARTING_BANKROLL,
+        "selected_hand": 0,
+    }.items():
+        if k not in st.session_state:
+            st.session_state[k] = v
 
 # ---------------------------------------------------------------------------
 # Game actions
 # ---------------------------------------------------------------------------
 
-def settle_bet():
-    status = st.session_state.status
-    bet = st.session_state.bet
-    if status == "blackjack":
-        st.session_state.bankroll += bet + (bet * 3) // 2
-    elif status in ("player_wins", "dealer_bust"):
-        st.session_state.bankroll += bet * 2
-    elif status == "push":
-        st.session_state.bankroll += bet
-
-
 def place_bet(amount):
-    if st.session_state.status != "betting":
-        return
-    if amount not in CHIP_VALUES:
-        return
-    if amount > st.session_state.bankroll:
-        return
-    st.session_state.bankroll -= amount
-    st.session_state.bet += amount
+    ss = st.session_state
+    if ss.status != "betting" or amount not in CHIP_VALUES: return
+    if amount > ss.bankroll: return
+    ss.bankroll -= amount
+    ss.bets[ss.selected_hand] += amount
 
+def clear_bet(hand_idx):
+    ss = st.session_state
+    if ss.status != "betting": return
+    ss.bankroll += ss.bets[hand_idx]
+    ss.bets[hand_idx] = 0
 
-def clear_bet():
-    if st.session_state.status != "betting":
-        return
-    st.session_state.bankroll += st.session_state.bet
-    st.session_state.bet = 0
+def _settle_hand(i):
+    ss  = st.session_state
+    bet = ss.bets[i]
+    hs  = ss.hand_statuses[i]
+    if hs == "blackjack_win":
+        ss.bankroll += bet + (bet * 3) // 2
+    elif hs == "won":
+        ss.bankroll += bet * 2
+    elif hs == "push":
+        ss.bankroll += bet
+    # bust / lost: bet already left bankroll at place_bet time
 
+def _dealer_play():
+    ss = st.session_state
+    has_stand = any(ss.hand_statuses[i] == "stand" for i in range(NUM_HANDS))
+    if has_stand:
+        while hand_value(ss.dealer) < 17:
+            ss.dealer.append(ss.deck.pop())
+
+    dv = hand_value(ss.dealer)
+    for i in range(NUM_HANDS):
+        if ss.bets[i] <= 0:
+            continue
+        hs = ss.hand_statuses[i]
+        if hs in ("bust", "blackjack_win", "push", "lost"):
+            continue
+        if hs == "stand":
+            pv = hand_value(ss.hands[i])
+            if dv > 21:           ss.hand_statuses[i] = "won"
+            elif pv > dv:         ss.hand_statuses[i] = "won"
+            elif dv > pv:         ss.hand_statuses[i] = "lost"
+            else:                 ss.hand_statuses[i] = "push"
+            _settle_hand(i)
+
+    ss.status      = "resolved"
+    ss.active_hand = -1
+
+def _advance_hand():
+    ss = st.session_state
+    for i in range(ss.active_hand + 1, NUM_HANDS):
+        if ss.hand_statuses[i] == "waiting":
+            ss.hand_statuses[i] = "active"
+            ss.active_hand = i
+            return
+    _dealer_play()
 
 def deal_hand():
-    if st.session_state.status != "betting" or st.session_state.bet <= 0:
-        return
-    st.session_state.deck = make_deck()
-    st.session_state.player = [st.session_state.deck.pop(), st.session_state.deck.pop()]
-    st.session_state.dealer = [st.session_state.deck.pop(), st.session_state.deck.pop()]
+    ss = st.session_state
+    if ss.status != "betting" or sum(ss.bets) == 0: return
 
-    pv = hand_value(st.session_state.player)
-    dv = hand_value(st.session_state.dealer)
+    ss.deck  = make_deck()
+    ss.hands = [[], [], []]
+    ss.dealer = []
+    active   = [i for i, b in enumerate(ss.bets) if b > 0]
 
-    if pv == 21 and dv == 21:
-        st.session_state.status = "push"
-    elif pv == 21:
-        st.session_state.status = "blackjack"
-    elif dv == 21:
-        st.session_state.status = "dealer_blackjack"
+    for _ in range(2):
+        for i in active:
+            ss.hands[i].append(ss.deck.pop())
+        ss.dealer.append(ss.deck.pop())
+
+    dealer_bj = hand_value(ss.dealer) == 21
+    statuses  = ["idle"] * NUM_HANDS
+    for i in active:
+        player_bj = hand_value(ss.hands[i]) == 21
+        if player_bj and dealer_bj:  statuses[i] = "push"
+        elif player_bj:              statuses[i] = "blackjack_win"
+        elif dealer_bj:              statuses[i] = "lost"
+        else:                        statuses[i] = "waiting"
+    ss.hand_statuses = statuses
+
+    for i in active:
+        if ss.hand_statuses[i] in ("blackjack_win", "push", "lost"):
+            _settle_hand(i)
+
+    playable = [i for i in active if ss.hand_statuses[i] == "waiting"]
+    if playable:
+        ss.hand_statuses[playable[0]] = "active"
+        ss.active_hand = playable[0]
+        ss.status      = "playing"
     else:
-        st.session_state.status = "playing"
-
-    if st.session_state.status != "playing":
-        settle_bet()
-
+        ss.active_hand = -1
+        ss.status      = "resolved"
 
 def hit():
-    if st.session_state.status != "playing":
-        return
-    st.session_state.player.append(st.session_state.deck.pop())
-    if hand_value(st.session_state.player) > 21:
-        st.session_state.status = "player_bust"
-        settle_bet()
-
+    ss  = st.session_state
+    idx = ss.active_hand
+    if ss.status != "playing" or idx < 0: return
+    ss.hands[idx].append(ss.deck.pop())
+    if hand_value(ss.hands[idx]) > 21:
+        ss.hand_statuses[idx] = "bust"
+        _advance_hand()
 
 def stand():
-    if st.session_state.status != "playing":
-        return
-    while hand_value(st.session_state.dealer) < 17:
-        st.session_state.dealer.append(st.session_state.deck.pop())
-
-    pv = hand_value(st.session_state.player)
-    dv = hand_value(st.session_state.dealer)
-    if dv > 21:
-        st.session_state.status = "dealer_bust"
-    elif pv > dv:
-        st.session_state.status = "player_wins"
-    elif dv > pv:
-        st.session_state.status = "dealer_wins"
-    else:
-        st.session_state.status = "push"
-    settle_bet()
-
+    ss  = st.session_state
+    idx = ss.active_hand
+    if ss.status != "playing" or idx < 0: return
+    ss.hand_statuses[idx] = "stand"
+    _advance_hand()
 
 def new_hand():
-    st.session_state.player = []
-    st.session_state.dealer = []
-    st.session_state.bet = 0
-    st.session_state.status = "betting"
-
+    ss = st.session_state
+    ss.hands         = [[], [], []]
+    ss.dealer        = []
+    ss.bets          = [0, 0, 0]
+    ss.hand_statuses = ["idle"] * NUM_HANDS
+    ss.active_hand   = -1
+    ss.status        = "betting"
+    ss.selected_hand = 0
 
 def reset_bankroll():
     st.session_state.bankroll = STARTING_BANKROLL
-    st.session_state.bet = 0
-    st.session_state.player = []
-    st.session_state.dealer = []
-    st.session_state.status = "betting"
-
+    new_hand()
 
 # ---------------------------------------------------------------------------
-# Visual helpers
+# Styles
 # ---------------------------------------------------------------------------
 
 def inject_styles():
@@ -211,328 +218,380 @@ def inject_styles():
     @import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;600;700&family=Inter:wght@400;500;600;700&display=swap');
 
     :root {
-        --felt-dark: #0e3324;
-        --felt-mid: #17543a;
-        --felt-light: #1e6b48;
-        --gold: #d4af37;
+        --gold:       #d4af37;
         --gold-light: #efd58a;
-        --cream: #f5ecd7;
-        --ink: #0a1e16;
+        --cream:      #f5ecd7;
+        --ink:        #0a1e16;
+        --wood-dark:  #2a180d;
+        --wood-mid:   #6b5010;
+        --wood-light: #c9a227;
     }
 
-    /* ── Background ── */
+    /* ── Room background ── */
     .stApp {
-        background: radial-gradient(ellipse at 50% 10%, #225e3e 0%, #17543a 35%, #0e3324 80%, #081a12 100%) !important;
+        background: radial-gradient(ellipse at 50% 0%, #111 0%, #050505 100%) !important;
         font-family: 'Inter', sans-serif;
     }
 
-    /* ── Casino table container ── */
+    /* ── Table surface (the felt) ── */
     .main .block-container {
-        max-width: 800px !important;
-        padding: 2.5rem 2.8rem 3.5rem !important;
-        background: rgba(10, 38, 22, 0.55) !important;
-        border: 2px solid var(--gold) !important;
-        border-radius: 24px !important;
+        max-width: 960px !important;
+        padding: 0 0 0 !important;
+        background:
+            linear-gradient(180deg,
+                #1d6040 0%,
+                #17543a 25%,
+                #124430 55%,
+                #0d3828 80%,
+                #0a2d20 100%) !important;
+        border-left:  10px solid var(--wood-mid) !important;
+        border-right: 10px solid var(--wood-mid) !important;
+        border-top:   none !important;
+        border-bottom: none !important;
+        border-radius: 0 !important;
         box-shadow:
-            0 0 100px rgba(0,0,0,0.7),
-            0 0 40px rgba(0,0,0,0.5),
-            inset 0 0 80px rgba(14,51,36,0.6),
-            inset 0 1px 4px rgba(212,175,55,0.12) !important;
-        margin-top: 1.5rem !important;
-        margin-bottom: 3rem !important;
+            -12px 0 30px rgba(0,0,0,0.9),
+            12px 0 30px rgba(0,0,0,0.9),
+            0 40px 80px rgba(0,0,0,0.95),
+            inset 0 0 120px rgba(0,0,0,0.25) !important;
+        margin-top: 0 !important;
     }
 
-    /* ── Title ── */
-    h1 {
-        font-family: 'Cormorant Garamond', serif !important;
-        color: var(--gold) !important;
-        font-size: clamp(2.2rem, 5vw, 3.2rem) !important;
-        letter-spacing: 0.1em !important;
-        text-shadow:
-            0 2px 10px rgba(0,0,0,0.6),
-            0 0 30px rgba(212,175,55,0.3),
-            0 0 60px rgba(212,175,55,0.1) !important;
-        text-align: center !important;
-        margin-bottom: 0.1rem !important;
+    /* ── Table top rail (wood arc at top) ── */
+    .table-top-rail {
+        background: linear-gradient(180deg,
+            #150c04 0%, #2a180d 15%, #4a2e10 30%,
+            #6b5010 50%, #c9a227 65%, #efd58a 72%,
+            #c9a227 78%, #6b5010 88%, #2a180d 100%);
+        padding: 1.8rem 2.5rem 1.2rem;
+        text-align: center;
+        position: relative;
+        border-bottom: 1px solid rgba(212,175,55,0.2);
+    }
+    .table-top-rail::before {
+        content: '';
+        position: absolute;
+        top: 0; left: 0; right: 0;
+        height: 4px;
+        background: linear-gradient(90deg,
+            transparent 0%, rgba(255,230,150,0.4) 30%,
+            rgba(255,255,200,0.6) 50%,
+            rgba(255,230,150,0.4) 70%, transparent 100%);
     }
 
-    /* ── Subtitle/caption ── */
-    [data-testid="stCaptionContainer"] p {
-        font-family: 'Inter', sans-serif !important;
-        color: var(--gold-light) !important;
-        font-size: 0.68rem !important;
-        text-transform: uppercase !important;
-        letter-spacing: 0.24em !important;
-        text-align: center !important;
-        opacity: 0.75 !important;
+    /* ── Dealer area ── */
+    .dealer-area {
+        padding: 1.2rem 2.5rem 0.8rem;
+        background: linear-gradient(180deg,
+            rgba(30,95,65,0.35) 0%, rgba(20,70,45,0.1) 100%);
+        border-bottom: none;
     }
 
-    /* ── Hand labels (Dealer / You) ── */
+    /* ── Gold rail separator ── */
+    .gold-rail {
+        height: 16px;
+        background: linear-gradient(180deg,
+            #3d2200 0%, #6b5010 15%,
+            #c9a227 35%, #efd58a 50%,
+            #c9a227 65%, #6b5010 85%, #3d2200 100%);
+        margin: 0;
+        box-shadow:
+            0 6px 24px rgba(0,0,0,0.7),
+            0 -2px 8px rgba(212,175,55,0.15),
+            inset 0 1px 2px rgba(255,240,180,0.3);
+    }
+
+    /* ── Player area ── */
+    .player-area {
+        padding: 1.2rem 2.5rem 0.5rem;
+    }
+
+    /* ── Controls area ── */
+    .controls-area {
+        padding: 0.5rem 2.5rem 1.5rem;
+    }
+
+    /* ── Table bottom rail ── */
+    .table-bottom-rail {
+        background: linear-gradient(0deg,
+            #150c04 0%, #2a180d 15%, #4a2e10 30%,
+            #6b5010 50%, #c9a227 65%, #efd58a 72%,
+            #c9a227 78%, #6b5010 88%, #2a180d 100%);
+        padding: 0.8rem 2.5rem;
+        text-align: center;
+        position: relative;
+        border-top: 1px solid rgba(212,175,55,0.2);
+    }
+    .table-bottom-rail::after {
+        content: '';
+        position: absolute;
+        bottom: 0; left: 0; right: 0;
+        height: 4px;
+        background: linear-gradient(90deg,
+            transparent 0%, rgba(255,230,150,0.4) 30%,
+            rgba(255,255,200,0.6) 50%,
+            rgba(255,230,150,0.4) 70%, transparent 100%);
+    }
+
+    /* ── Typography ── */
     h3 {
         font-family: 'Cormorant Garamond', serif !important;
         color: var(--cream) !important;
-        font-size: 1.35rem !important;
-        letter-spacing: 0.05em !important;
-        margin-bottom: 0.4rem !important;
+        font-size: 1.1rem !important;
+        letter-spacing: 0.1em !important;
+        text-transform: uppercase !important;
+        margin-bottom: 0.3rem !important;
     }
-
-    /* ── Dividers ── */
     hr {
         border: none !important;
-        border-top: 1px solid var(--gold) !important;
-        opacity: 0.2 !important;
-        margin: 0.8rem 0 !important;
+        border-top: 1px solid rgba(212,175,55,0.18) !important;
+        margin: 0.6rem 0 !important;
     }
 
     /* ── Card images ── */
     [data-testid="stImage"] img {
-        border-radius: 8px !important;
+        border-radius: 6px !important;
         box-shadow:
-            0 8px 24px rgba(0,0,0,0.75),
-            0 2px 6px rgba(0,0,0,0.5),
-            0 1px 2px rgba(255,255,255,0.06) !important;
+            0 6px 18px rgba(0,0,0,0.75),
+            0 2px 4px rgba(0,0,0,0.5) !important;
         border: 1px solid rgba(255,255,255,0.07) !important;
-        transition: transform 0.2s ease, box-shadow 0.2s ease !important;
+        transition: transform 0.2s ease !important;
     }
-
     [data-testid="stImage"] img:hover {
-        transform: translateY(-5px) rotate(1.5deg) !important;
-        box-shadow:
-            0 14px 32px rgba(0,0,0,0.85),
-            0 4px 10px rgba(0,0,0,0.6) !important;
+        transform: translateY(-4px) !important;
     }
 
-    /* ── All buttons ── */
+    /* ── All buttons base ── */
     .stButton > button {
         font-family: 'Inter', sans-serif !important;
         text-transform: uppercase !important;
-        letter-spacing: 0.14em !important;
-        font-size: 0.78rem !important;
+        letter-spacing: 0.12em !important;
+        font-size: 0.75rem !important;
         font-weight: 600 !important;
         border-radius: 6px !important;
-        padding: 11px 22px !important;
-        transition: all 0.15s ease !important;
+        transition: all 0.14s ease !important;
         border: 1.5px solid var(--gold) !important;
     }
-
-    /* Secondary (default) buttons */
     .stButton > button[kind="secondary"] {
         background: linear-gradient(180deg, #1c4d38 0%, #102d20 100%) !important;
         color: var(--gold-light) !important;
     }
-
     .stButton > button[kind="secondary"]:hover:not([disabled]) {
         background: linear-gradient(180deg, var(--gold) 0%, #c9a227 100%) !important;
         color: var(--ink) !important;
         transform: translateY(-2px) !important;
-        box-shadow: 0 5px 16px rgba(212,175,55,0.4) !important;
+        box-shadow: 0 4px 14px rgba(212,175,55,0.4) !important;
     }
-
-    /* Primary buttons */
     .stButton > button[kind="primary"] {
         background: linear-gradient(180deg, var(--gold) 0%, #c0991f 100%) !important;
         color: var(--ink) !important;
         font-weight: 700 !important;
-        border-color: var(--gold-light) !important;
     }
-
     .stButton > button[kind="primary"]:hover:not([disabled]) {
         background: linear-gradient(180deg, var(--gold-light) 0%, var(--gold) 100%) !important;
         transform: translateY(-2px) !important;
-        box-shadow: 0 5px 20px rgba(212,175,55,0.5) !important;
+        box-shadow: 0 4px 18px rgba(212,175,55,0.5) !important;
     }
-
     .stButton > button:active:not([disabled]) {
         transform: translateY(1px) !important;
-        box-shadow: none !important;
     }
-
     .stButton > button[disabled] {
-        opacity: 0.22 !important;
-        cursor: not-allowed !important;
+        opacity: 0.25 !important;
     }
 
-    /* ── Metrics (bankroll / bet) ── */
+    /* ── Chip buttons (5-column horizontal block) ── */
+    [data-testid="stHorizontalBlock"]:has(> [data-testid="stColumn"]:nth-child(5)) [data-testid="stColumn"] {
+        display: flex !important;
+        justify-content: center !important;
+    }
+    [data-testid="stHorizontalBlock"]:has(> [data-testid="stColumn"]:nth-child(5)) button {
+        border-radius: 50% !important;
+        width: 60px !important; min-width: 60px !important; max-width: 60px !important;
+        height: 60px !important; min-height: 60px !important;
+        padding: 0 !important;
+        font-size: 0.75rem !important; font-weight: 700 !important;
+        letter-spacing: 0.02em !important; text-transform: none !important;
+        outline-offset: -6px !important;
+        box-shadow: 0 5px 14px rgba(0,0,0,0.55), inset 0 1px 2px rgba(255,255,255,0.15) !important;
+    }
+    [data-testid="stHorizontalBlock"]:has(> [data-testid="stColumn"]:nth-child(5)) button:hover:not([disabled]) {
+        transform: translateY(-6px) !important;
+        box-shadow: 0 10px 22px rgba(0,0,0,0.7), 0 0 0 2px rgba(212,175,55,0.35) !important;
+    }
+    /* $1 white */
+    [data-testid="stHorizontalBlock"]:has(> [data-testid="stColumn"]:nth-child(5)) [data-testid="stColumn"]:nth-child(1) button {
+        background: linear-gradient(145deg,#f5f5f5,#b8b8b8) !important;
+        color:#222 !important; border-color:#888 !important;
+        outline: 2px solid rgba(255,255,255,0.3) !important;
+    }
+    /* $5 red */
+    [data-testid="stHorizontalBlock"]:has(> [data-testid="stColumn"]:nth-child(5)) [data-testid="stColumn"]:nth-child(2) button {
+        background: linear-gradient(145deg,#e74c3c,#a93226) !important;
+        color:#fff !important; border-color:#7b241c !important;
+        outline: 2px solid rgba(255,100,90,0.35) !important;
+    }
+    /* $25 green */
+    [data-testid="stHorizontalBlock"]:has(> [data-testid="stColumn"]:nth-child(5)) [data-testid="stColumn"]:nth-child(3) button {
+        background: linear-gradient(145deg,#2ecc71,#1a7a40) !important;
+        color:#fff !important; border-color:#145a32 !important;
+        outline: 2px solid rgba(80,200,120,0.35) !important;
+    }
+    /* $100 slate */
+    [data-testid="stHorizontalBlock"]:has(> [data-testid="stColumn"]:nth-child(5)) [data-testid="stColumn"]:nth-child(4) button {
+        background: linear-gradient(145deg,#5d6d7e,#2c3e50) !important;
+        color:#fff !important; border-color:#17202a !important;
+        outline: 2px solid rgba(120,150,170,0.3) !important;
+    }
+    /* $500 purple */
+    [data-testid="stHorizontalBlock"]:has(> [data-testid="stColumn"]:nth-child(5)) [data-testid="stColumn"]:nth-child(5) button {
+        background: linear-gradient(145deg,#a569bd,#7d3c98) !important;
+        color:#fff !important; border-color:#5b2c6f !important;
+        outline: 2px solid rgba(180,130,210,0.35) !important;
+    }
+
+    /* ── Bankroll metric ── */
     [data-testid="metric-container"] {
-        background: linear-gradient(135deg, rgba(0,0,0,0.35) 0%, rgba(14,51,36,0.5) 100%) !important;
-        border: 1px solid rgba(212,175,55,0.3) !important;
-        border-radius: 12px !important;
-        padding: 16px 20px !important;
-        box-shadow: inset 0 1px 4px rgba(0,0,0,0.4) !important;
+        background: rgba(0,0,0,0.3) !important;
+        border: 1px solid rgba(212,175,55,0.25) !important;
+        border-radius: 10px !important;
+        padding: 12px 16px !important;
     }
-
     [data-testid="stMetricLabel"] p {
         font-family: 'Inter', sans-serif !important;
-        font-size: 0.62rem !important;
-        text-transform: uppercase !important;
-        letter-spacing: 0.24em !important;
-        color: var(--gold-light) !important;
-        opacity: 0.8 !important;
+        font-size: 0.6rem !important; text-transform: uppercase !important;
+        letter-spacing: 0.22em !important; color: var(--gold-light) !important; opacity: 0.8 !important;
     }
-
     [data-testid="stMetricValue"] {
         font-family: 'Cormorant Garamond', serif !important;
-        font-size: 2rem !important;
-        color: var(--cream) !important;
-        line-height: 1.15 !important;
+        font-size: 1.9rem !important; color: var(--cream) !important;
     }
 
-    /* ── Alerts ── */
-    [data-testid="stAlert"] {
-        border-radius: 8px !important;
+    /* ── Small labels ── */
+    .section-label {
+        font-family: 'Inter', sans-serif;
+        color: var(--gold-light);
+        font-size: 0.62rem;
+        text-transform: uppercase;
+        letter-spacing: 0.22em;
+        opacity: 0.72;
+        margin: 0.6rem 0 0.2rem;
+    }
+
+    /* ── Caption ── */
+    [data-testid="stCaptionContainer"] p {
+        color: var(--gold-light) !important;
+        font-size: 0.62rem !important;
+        text-transform: uppercase !important;
+        letter-spacing: 0.2em !important;
+        opacity: 0.65 !important;
         text-align: center !important;
     }
 
+    /* ── Warning / alert ── */
     [data-testid="stAlert"] p {
         font-family: 'Cormorant Garamond', serif !important;
-        font-size: 1.45rem !important;
+        font-size: 1.2rem !important;
         font-weight: 600 !important;
-        letter-spacing: 0.05em !important;
-    }
-
-    /* ── Section label ("Chips") ── */
-    .chip-label {
-        font-family: 'Inter', sans-serif;
-        color: var(--gold-light);
-        font-size: 0.65rem;
-        text-transform: uppercase;
-        letter-spacing: 0.24em;
-        opacity: 0.75;
-        margin-bottom: 2px;
     }
     </style>
     """, unsafe_allow_html=True)
 
+# ---------------------------------------------------------------------------
+# Render helpers
+# ---------------------------------------------------------------------------
 
-def render_cards_html(cards):
-    """Render cards as custom HTML with shadows and deal animation."""
+def render_cards(cards, width=80):
     if not cards:
-        st.markdown('<div style="height:130px;"></div>', unsafe_allow_html=True)
+        st.write("")
         return
-
-    imgs = ""
+    cols = st.columns(max(len(cards), 5))
     for i, card in enumerate(cards):
-        url = card_image_url(card)
-        delay = i * 0.08
-        imgs += f"""
-        <img src="{url}"
-             style="
-                 width:90px;
-                 border-radius:8px;
-                 box-shadow:0 8px 24px rgba(0,0,0,0.75),0 2px 6px rgba(0,0,0,0.5);
-                 border:1px solid rgba(255,255,255,0.07);
-                 animation:dealCard 0.35s ease-out {delay:.2f}s both;
-             " />"""
+        with cols[i]:
+            st.image(card_url(card), width=width)
+
+
+def render_bet_circle(bet, status):
+    resolved_win  = status in ("won", "blackjack_win")
+    resolved_lose = status in ("bust", "lost")
+    resolved_push = status == "push"
+    is_active     = status == "active"
+
+    if resolved_win:
+        bg, border, color = "rgba(46,204,113,0.18)", "#2ecc71", "#2ecc71"
+    elif resolved_lose:
+        bg, border, color = "rgba(231,76,60,0.18)",  "#e74c3c", "#e74c3c"
+    elif resolved_push:
+        bg, border, color = "rgba(150,160,150,0.18)","#95a5a6", "#95a5a6"
+    elif is_active:
+        bg, border, color = "rgba(212,175,55,0.2)",  "#d4af37", "#d4af37"
+    elif bet > 0:
+        bg, border, color = "rgba(212,175,55,0.12)", "rgba(212,175,55,0.5)", "#efd58a"
+    else:
+        bg, border, color = "rgba(255,255,255,0.04)","rgba(255,255,255,0.12)", "rgba(255,255,255,0.2)"
+
+    glow  = "0 0 18px rgba(212,175,55,0.45)" if is_active else "none"
+    text  = f"${bet}" if bet > 0 else "BET"
+    fsize = "1.1rem" if bet > 0 else "0.6rem"
+    fw    = "700" if bet > 0 else "400"
+    ls    = "0" if bet > 0 else "0.12em"
 
     st.markdown(f"""
-    <style>
-    @keyframes dealCard {{
-        from {{ opacity:0; transform:translateY(-18px) rotate(-4deg); }}
-        to   {{ opacity:1; transform:translateY(0)     rotate(0deg);  }}
-    }}
-    </style>
-    <div style="display:flex;gap:10px;min-height:130px;align-items:flex-start;
-                padding:4px 0;flex-wrap:wrap;">
-        {imgs}
-    </div>
+    <div style="
+        width:62px; height:62px; border-radius:50%;
+        background:{bg}; border:2px dashed {border};
+        box-shadow:{glow};
+        display:flex; align-items:center; justify-content:center;
+        margin:4px auto 6px;
+        font-family:'Cormorant Garamond',serif;
+        font-size:{fsize}; font-weight:{fw};
+        color:{color}; letter-spacing:{ls};
+        transition:all 0.2s;
+    ">{text}</div>
     """, unsafe_allow_html=True)
 
 
-def render_status_html(status):
-    """Render outcome message with casino-styled typography."""
-    text = STATUS_TEXT.get(status, "")
-
-    if not text or status == "betting":
-        st.markdown('<div style="height:54px;"></div>', unsafe_allow_html=True)
+def render_hand_badge(status):
+    text, color = HAND_BADGE.get(status, ("", ""))
+    if not text:
+        st.markdown('<div style="height:22px;"></div>', unsafe_allow_html=True)
         return
-
-    if status in WIN_STATUSES:
-        color, glow = "#d4af37", "rgba(212,175,55,0.35)"
-    elif status in LOSE_STATUSES:
-        color, glow = "#e8a0a0", "rgba(232,160,160,0.25)"
-    else:
-        color, glow = "#f5ecd7", "rgba(245,236,215,0.2)"
-
+    bg = color + "22"
+    border = color + "66"
     st.markdown(f"""
-    <div style="text-align:center;padding:10px 0;min-height:54px;
-                display:flex;align-items:center;justify-content:center;">
+    <div style="text-align:center; margin-top:4px;">
         <span style="
-            font-family:'Cormorant Garamond',serif;
-            font-size:1.65rem;
-            font-weight:700;
-            color:{color};
-            text-shadow:0 0 24px {glow};
-            letter-spacing:0.06em;
+            display:inline-block; padding:3px 10px;
+            border-radius:20px; border:1px solid {border};
+            background:{bg}; color:{color};
+            font-family:'Inter',sans-serif; font-size:0.62rem;
+            font-weight:700; text-transform:uppercase; letter-spacing:0.14em;
         ">{text}</span>
     </div>
     """, unsafe_allow_html=True)
 
 
-def render_chips_html(bankroll):
-    """Render casino-style circular chip buttons via iframe component."""
-    chips_html = ""
-    for value, gradient, text_color, border_color, highlight in CHIP_CONFIG:
-        affordable = value <= bankroll
-        disabled_attr = "" if affordable else "disabled"
-        opacity = "1" if affordable else "0.28"
-        cursor = "pointer" if affordable else "not-allowed"
-        onclick = f"selectChip({value})" if affordable else ""
+def render_hand_column(hand_idx):
+    ss     = st.session_state
+    hand   = ss.hands[hand_idx]
+    bet    = ss.bets[hand_idx]
+    status = ss.hand_statuses[hand_idx]
+    val    = hand_value(hand) if hand else 0
 
-        chips_html += f"""
-        <button
-            {disabled_attr}
-            onclick="{onclick}"
-            onmouseover="if(!this.disabled){{this.style.transform='translateY(-6px)';this.style.boxShadow='0 10px 24px rgba(0,0,0,0.7),0 0 0 3px rgba(212,175,55,0.4)'}}"
-            onmouseout="if(!this.disabled){{this.style.transform='translateY(0)';this.style.boxShadow='0 5px 14px rgba(0,0,0,0.55),inset 0 1px 3px {highlight}'}}"
-            onmousedown="if(!this.disabled)this.style.transform='translateY(-2px)'"
-            style="
-                width:70px; height:70px;
-                border-radius:50%;
-                background:{gradient};
-                color:{text_color};
-                border:3px solid {border_color};
-                outline:2.5px solid rgba(255,255,255,0.22);
-                outline-offset:-7px;
-                font-family:'Inter',sans-serif;
-                font-size:0.78rem;
-                font-weight:700;
-                cursor:{cursor};
-                opacity:{opacity};
-                box-shadow:0 5px 14px rgba(0,0,0,0.55),inset 0 1px 3px {highlight};
-                transition:transform 0.13s ease,box-shadow 0.13s ease;
-                letter-spacing:0.04em;
-                user-select:none;
-            ">
-            ${value}
-        </button>"""
+    is_active = (status == "active")
+    label_color = "#d4af37" if is_active else "#c8b89a"
+    label = f"Hand {hand_idx + 1}" + (f"  —  {val}" if val else "")
 
-    html = f"""<!DOCTYPE html>
-<html>
-<head>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@700&display=swap" rel="stylesheet">
-<style>
-  * {{ box-sizing:border-box; }}
-  body {{
-    margin:0; padding:12px 0 8px;
-    background:transparent;
-    display:flex; gap:14px;
-    justify-content:center; align-items:center;
-  }}
-</style>
-</head>
-<body>
-  {chips_html}
-  <script>
-    function selectChip(v) {{
-      var url = new URL(window.parent.location.href);
-      url.searchParams.set('chip', v);
-      window.parent.location.href = url.toString();
-    }}
-  </script>
-</body>
-</html>"""
-    components.html(html, height=108, scrolling=False)
+    shadow = "text-shadow:0 0 12px rgba(212,175,55,0.5);" if is_active else ""
+    st.markdown(
+        f'<div style="font-family:\'Cormorant Garamond\',serif;font-size:1.05rem;'
+        f'font-weight:600;color:{label_color};text-align:center;'
+        f'letter-spacing:0.06em;margin-bottom:0;{shadow}">{label}</div>',
+        unsafe_allow_html=True,
+    )
 
+    render_bet_circle(bet, status)
+    render_cards(hand, width=62)
+    render_hand_badge(status)
 
 # ---------------------------------------------------------------------------
 # Main app
@@ -543,129 +602,128 @@ def main():
     inject_styles()
     init_state()
 
-    # Handle chip click relayed via URL query param
-    chip_param = st.query_params.get("chip")
-    if chip_param:
-        try:
-            place_bet(int(chip_param))
-        except (ValueError, TypeError):
-            pass
-        st.query_params.clear()
-        st.rerun()
+    ss          = st.session_state
+    is_betting  = ss.status == "betting"
+    is_playing  = ss.status == "playing"
+    is_resolved = ss.status == "resolved"
+    reveal_dealer = is_resolved
+    broke = ss.bankroll == 0 and sum(ss.bets) == 0 and is_betting
 
-    status = st.session_state.status
-    is_betting = status == "betting"
-    is_playing = status == "playing"
-    is_resolved = not is_betting and not is_playing
-    reveal_dealer = status not in ("betting", "playing")
-    broke = (
-        st.session_state.bankroll == 0
-        and st.session_state.bet == 0
-        and is_betting
-    )
+    # ── Table top rail ────────────────────────────────────────────────────────
+    st.markdown("""
+    <div class="table-top-rail">
+        <div style="font-family:'Cormorant Garamond',serif; color:#d4af37;
+                    font-size:clamp(1.8rem,4vw,2.6rem); letter-spacing:0.12em;
+                    text-shadow:0 2px 12px rgba(0,0,0,0.7),0 0 28px rgba(212,175,55,0.3);">
+            ♠ &nbsp; Blackjack &nbsp; ♣
+        </div>
+        <div style="font-family:'Inter',sans-serif; color:#efd58a;
+                    font-size:0.62rem; text-transform:uppercase; letter-spacing:0.26em;
+                    opacity:0.7; margin-top:5px;">
+            Dealer stands on 17 &nbsp;·&nbsp; Blackjack pays 3 to 2 &nbsp;·&nbsp; 3 hands
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
 
-    # ── Header ──────────────────────────────────────────────────────────────
-    st.title("♠ Blackjack ♣")
-    st.caption("Dealer stands on 17  ·  Blackjack pays 3 to 2")
-
-    st.markdown("---")
-
-    # ── Dealer hand ─────────────────────────────────────────────────────────
-    if st.session_state.dealer:
-        if reveal_dealer:
-            dealer_cards = st.session_state.dealer
-            dealer_val = hand_value(st.session_state.dealer)
-        else:
-            dealer_cards = [st.session_state.dealer[0], "back"]
-            dealer_val = card_value(st.session_state.dealer[0])
+    # ── Dealer section ────────────────────────────────────────────────────────
+    st.markdown('<div class="dealer-area">', unsafe_allow_html=True)
+    if ss.dealer:
+        d_cards = ss.dealer if reveal_dealer else [ss.dealer[0], "back"]
+        d_val   = hand_value(ss.dealer) if reveal_dealer else card_value(ss.dealer[0])
     else:
-        dealer_cards = []
-        dealer_val = 0
+        d_cards, d_val = [], 0
 
-    dealer_label = "Dealer" + (f" — {dealer_val}" if dealer_val else "")
-    st.subheader(dealer_label)
-    render_cards_html(dealer_cards)
+    st.subheader("Dealer" + (f"  —  {d_val}" if d_val else ""))
+    render_cards(d_cards, width=72)
+    st.markdown('</div>', unsafe_allow_html=True)
 
-    # ── Outcome message ──────────────────────────────────────────────────────
-    render_status_html(status)
+    # ── Gold table rail ───────────────────────────────────────────────────────
+    st.markdown('<div class="gold-rail"></div>', unsafe_allow_html=True)
 
-    # ── Player hand ─────────────────────────────────────────────────────────
-    player_val = hand_value(st.session_state.player) if st.session_state.player else 0
-    player_label = "You" + (f" — {player_val}" if player_val else "")
-    st.subheader(player_label)
-    render_cards_html(st.session_state.player)
+    # ── Player hand columns ───────────────────────────────────────────────────
+    st.markdown('<div class="player-area">', unsafe_allow_html=True)
+    col0, col1, col2 = st.columns(3)
+    with col0: render_hand_column(0)
+    with col1: render_hand_column(1)
+    with col2: render_hand_column(2)
+    st.markdown('</div>', unsafe_allow_html=True)
 
+    # ── Controls ──────────────────────────────────────────────────────────────
+    st.markdown('<div class="controls-area">', unsafe_allow_html=True)
     st.markdown("---")
 
-    # ── Bankroll / Bet ───────────────────────────────────────────────────────
-    col_bank, col_bet = st.columns(2)
-    col_bank.metric("Bankroll", f"${st.session_state.bankroll}")
-    col_bet.metric("Bet", f"${st.session_state.bet}")
+    # Bankroll
+    st.metric("Bankroll", f"${ss.bankroll}")
 
-    st.write("")
-
-    # ── Chips ────────────────────────────────────────────────────────────────
     if is_betting and not broke:
-        st.markdown('<p class="chip-label">Chips</p>', unsafe_allow_html=True)
-        render_chips_html(st.session_state.bankroll)
+        # Hand selector
+        st.markdown('<p class="section-label">Betting on</p>', unsafe_allow_html=True)
+        sel0, sel1, sel2 = st.columns(3)
+        for idx, col in enumerate([sel0, sel1, sel2]):
+            with col:
+                bet_label = f"Hand {idx + 1}  ${ss.bets[idx]}" if ss.bets[idx] else f"Hand {idx + 1}"
+                if st.button(
+                    bet_label,
+                    key=f"sel_{idx}",
+                    type="primary" if ss.selected_hand == idx else "secondary",
+                    use_container_width=True,
+                ):
+                    ss.selected_hand = idx
+                    st.rerun()
 
-    # ── Action buttons ───────────────────────────────────────────────────────
-    st.write("")
-    if is_betting and not broke:
-        left, right = st.columns(2)
-        if left.button(
-            "Deal",
-            disabled=st.session_state.bet == 0,
-            type="primary",
-            use_container_width=True,
-            key="btn_deal",
-        ):
-            deal_hand()
-            st.rerun()
-        if right.button(
-            "Clear Bet",
-            disabled=st.session_state.bet == 0,
-            use_container_width=True,
-            key="btn_clear",
-        ):
-            clear_bet()
+        # Chips
+        st.markdown('<p class="section-label">Chips</p>', unsafe_allow_html=True)
+        chip_cols = st.columns(len(CHIP_VALUES))
+        for i, value in enumerate(CHIP_VALUES):
+            with chip_cols[i]:
+                if st.button(f"${value}", key=f"chip_{value}",
+                             disabled=value > ss.bankroll):
+                    place_bet(value)
+                    st.rerun()
+
+        # Deal / Clear
+        st.write("")
+        d_col, c_col = st.columns(2)
+        if d_col.button("Deal", disabled=sum(ss.bets) == 0,
+                         type="primary", use_container_width=True, key="btn_deal"):
+            deal_hand(); st.rerun()
+        if c_col.button("Clear Bets", disabled=sum(ss.bets) == 0,
+                         use_container_width=True, key="btn_clear"):
+            for i in range(NUM_HANDS): clear_bet(i)
             st.rerun()
 
     elif is_playing:
-        left, right = st.columns(2)
-        if left.button("Hit", type="primary", use_container_width=True, key="btn_hit"):
-            hit()
-            st.rerun()
-        if right.button("Stand", use_container_width=True, key="btn_stand"):
-            stand()
-            st.rerun()
+        active_idx = ss.active_hand
+        st.caption(f"Playing Hand {active_idx + 1}  —  value: {hand_value(ss.hands[active_idx])}")
+        h_col, s_col = st.columns(2)
+        if h_col.button("Hit",   type="primary", use_container_width=True, key="btn_hit"):
+            hit(); st.rerun()
+        if s_col.button("Stand", use_container_width=True, key="btn_stand"):
+            stand(); st.rerun()
 
     elif is_resolved:
-        if st.button(
-            "Next Hand",
-            type="primary",
-            use_container_width=True,
-            key="btn_next",
-        ):
-            new_hand()
-            st.rerun()
+        if st.button("Next Hand", type="primary",
+                     use_container_width=True, key="btn_next"):
+            new_hand(); st.rerun()
 
     if broke:
         st.warning("You're out of chips!")
-        if st.button(
-            "Reset Bankroll",
-            type="primary",
-            use_container_width=True,
-            key="btn_reset",
-        ):
-            reset_bankroll()
-            st.rerun()
+        if st.button("Reset Bankroll", type="primary",
+                     use_container_width=True, key="btn_reset"):
+            reset_bankroll(); st.rerun()
 
-    # ── Footer ───────────────────────────────────────────────────────────────
-    st.markdown("---")
-    st.caption(
-        "Aces count as 1 or 11  ·  Face cards are 10  ·  Dealer must hit on 16 and stand on 17"
-    )
+    # ── Table bottom rail ─────────────────────────────────────────────────────
+    st.markdown('</div>', unsafe_allow_html=True)
+    st.markdown("""
+    <div class="table-bottom-rail">
+        <span style="font-family:'Inter',sans-serif; color:#efd58a;
+                     font-size:0.6rem; text-transform:uppercase;
+                     letter-spacing:0.2em; opacity:0.55;">
+            Aces 1 or 11 &nbsp;·&nbsp; Face cards 10
+            &nbsp;·&nbsp; Dealer hits on 16, stands on 17
+        </span>
+    </div>
+    """, unsafe_allow_html=True)
 
 
 if __name__ == "__main__":
