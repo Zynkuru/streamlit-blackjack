@@ -2,6 +2,7 @@
 Blackjack — 3 hands, pure-Python Streamlit app.
 
 Run locally with:
+    pip install -r requirements.txt
     streamlit run app.py
 """
 
@@ -105,7 +106,6 @@ def _settle_hand(i):
         ss.bankroll += bet * 2
     elif hs == "push":
         ss.bankroll += bet
-    # bust / lost: bet already left bankroll at place_bet time
 
 def _dealer_play():
     ss = st.session_state
@@ -209,109 +209,105 @@ def reset_bankroll():
     new_hand()
 
 # ---------------------------------------------------------------------------
-# Styles
+# Styles — CSS injected into Streamlit
 # ---------------------------------------------------------------------------
 
 def inject_styles():
     st.markdown("""
     <style>
-    @import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;600;700&family=Inter:wght@400;500;600;700&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700;900&family=Bebas+Neue&family=Inter:wght@400;500;600;700&display=swap');
 
     :root {
         --gold:       #d4af37;
         --gold-light: #efd58a;
+        --gold-dark:  #8a6e1a;
         --cream:      #f5ecd7;
         --ink:        #0a1e16;
+        --felt-core:  #14683f;
+        --felt-dark:  #0a3821;
         --wood-dark:  #2a180d;
         --wood-mid:   #6b5010;
-        --wood-light: #c9a227;
     }
 
-    /* ── Room background ── */
+    /* ── Room background (outside the table) ────────────────────────────── */
     .stApp {
         background: radial-gradient(ellipse at 50% 0%, #111 0%, #050505 100%) !important;
         font-family: 'Inter', sans-serif;
     }
 
-    /* ── Table surface (the felt) ── */
+    /* ── Table surface (the felt) ──────────────────────────────────────── */
+    [data-testid="stMainBlockContainer"],
     .main .block-container {
-        max-width: 960px !important;
-        padding: 0 0 0 !important;
+        max-width: 1000px !important;
+        padding: 0 !important;
         background:
-            linear-gradient(180deg,
-                #1d6040 0%,
-                #17543a 25%,
-                #124430 55%,
-                #0d3828 80%,
-                #0a2d20 100%) !important;
-        border-left:  10px solid var(--wood-mid) !important;
-        border-right: 10px solid var(--wood-mid) !important;
-        border-top:   none !important;
-        border-bottom: none !important;
+            radial-gradient(ellipse at 50% 40%,
+                #1c7d4e 0%,
+                var(--felt-core) 30%,
+                #0f4a2e 70%,
+                var(--felt-dark) 100%) !important;
+        border-left:  14px solid var(--wood-mid) !important;
+        border-right: 14px solid var(--wood-mid) !important;
         border-radius: 0 !important;
         box-shadow:
             -12px 0 30px rgba(0,0,0,0.9),
             12px 0 30px rgba(0,0,0,0.9),
             0 40px 80px rgba(0,0,0,0.95),
-            inset 0 0 120px rgba(0,0,0,0.25) !important;
+            inset 0 0 180px rgba(0,0,0,0.45) !important;
         margin-top: 0 !important;
     }
 
-    /* ── Table top rail (wood arc at top) ── */
-    .table-top-rail {
-        background: linear-gradient(180deg,
-            #150c04 0%, #2a180d 15%, #4a2e10 30%,
-            #6b5010 50%, #c9a227 65%, #efd58a 72%,
-            #c9a227 78%, #6b5010 88%, #2a180d 100%);
-        padding: 1.8rem 2.5rem 1.2rem;
+    /* ── Banner area (holds the arched casino headline) ─────────────────── */
+    .table-banner {
+        padding: 1.5rem 1rem 0.3rem;
         text-align: center;
-        position: relative;
-        border-bottom: 1px solid rgba(212,175,55,0.2);
     }
-    .table-top-rail::before {
-        content: '';
-        position: absolute;
-        top: 0; left: 0; right: 0;
-        height: 4px;
-        background: linear-gradient(90deg,
-            transparent 0%, rgba(255,230,150,0.4) 30%,
-            rgba(255,255,200,0.6) 50%,
-            rgba(255,230,150,0.4) 70%, transparent 100%);
+    .banner-svg {
+        width: 100%;
+        max-width: 920px;
+        display: block;
+        margin: 0 auto;
+        filter: drop-shadow(0 4px 10px rgba(0,0,0,0.55));
+    }
+    .banner-insurance {
+        font-family: 'Bebas Neue', Impact, sans-serif;
+        font-size: clamp(1.3rem, 3vw, 2rem);
+        letter-spacing: 0.18em;
+        color: rgba(6, 40, 22, 0.72);
+        text-shadow: 0 1px 0 rgba(255,255,255,0.05);
+        margin-top: -0.4rem;
+        padding-bottom: 0.5rem;
     }
 
-    /* ── Dealer area ── */
+    /* ── Dealer section ────────────────────────────────────────────────── */
     .dealer-area {
-        padding: 1.2rem 2.5rem 0.8rem;
-        background: linear-gradient(180deg,
-            rgba(30,95,65,0.35) 0%, rgba(20,70,45,0.1) 100%);
-        border-bottom: none;
+        padding: 0.6rem 2.5rem 1rem;
+        text-align: center;
     }
 
-    /* ── Gold rail separator ── */
+    /* ── Gold rail separator ───────────────────────────────────────────── */
     .gold-rail {
-        height: 16px;
+        height: 12px;
         background: linear-gradient(180deg,
-            #3d2200 0%, #6b5010 15%,
-            #c9a227 35%, #efd58a 50%,
+            #3d2200 0%, #6b5010 20%,
+            #c9a227 48%, #efd58a 55%,
             #c9a227 65%, #6b5010 85%, #3d2200 100%);
-        margin: 0;
         box-shadow:
-            0 6px 24px rgba(0,0,0,0.7),
-            0 -2px 8px rgba(212,175,55,0.15),
+            0 6px 18px rgba(0,0,0,0.6),
             inset 0 1px 2px rgba(255,240,180,0.3);
     }
 
-    /* ── Player area ── */
+    /* ── Player hands area ─────────────────────────────────────────────── */
     .player-area {
-        padding: 1.2rem 2.5rem 0.5rem;
+        padding: 1.2rem 2rem 0.6rem;
     }
 
-    /* ── Controls area ── */
+    /* ── Controls area ─────────────────────────────────────────────────── */
     .controls-area {
         padding: 0.5rem 2.5rem 1.5rem;
     }
 
-    /* ── Table bottom rail ── */
+    /* ── Table bottom rail ─────────────────────────────────────────────── */
     .table-bottom-rail {
         background: linear-gradient(0deg,
             #150c04 0%, #2a180d 15%, #4a2e10 30%,
@@ -319,54 +315,66 @@ def inject_styles():
             #c9a227 78%, #6b5010 88%, #2a180d 100%);
         padding: 0.8rem 2.5rem;
         text-align: center;
-        position: relative;
-        border-top: 1px solid rgba(212,175,55,0.2);
-    }
-    .table-bottom-rail::after {
-        content: '';
-        position: absolute;
-        bottom: 0; left: 0; right: 0;
-        height: 4px;
-        background: linear-gradient(90deg,
-            transparent 0%, rgba(255,230,150,0.4) 30%,
-            rgba(255,255,200,0.6) 50%,
-            rgba(255,230,150,0.4) 70%, transparent 100%);
     }
 
-    /* ── Typography ── */
+    /* ── Typography ────────────────────────────────────────────────────── */
     h3 {
-        font-family: 'Cormorant Garamond', serif !important;
+        font-family: 'Playfair Display', serif !important;
         color: var(--cream) !important;
-        font-size: 1.1rem !important;
-        letter-spacing: 0.1em !important;
-        text-transform: uppercase !important;
-        margin-bottom: 0.3rem !important;
+        font-size: 1.2rem !important;
+        letter-spacing: 0.12em !important;
+        text-align: center !important;
+        margin: 0.8rem 0 0.4rem !important;
+        font-weight: 600 !important;
     }
     hr {
         border: none !important;
-        border-top: 1px solid rgba(212,175,55,0.18) !important;
+        border-top: 1px solid rgba(212,175,55,0.2) !important;
         margin: 0.6rem 0 !important;
     }
 
-    /* ── Card images ── */
-    [data-testid="stImage"] img {
-        border-radius: 6px !important;
-        box-shadow:
-            0 6px 18px rgba(0,0,0,0.75),
-            0 2px 4px rgba(0,0,0,0.5) !important;
-        border: 1px solid rgba(255,255,255,0.07) !important;
-        transition: transform 0.2s ease !important;
+    /* ── Card row (centered flex) + deal animation ─────────────────────── */
+    .cards-row {
+        display: flex;
+        justify-content: center;
+        align-items: flex-end;
+        gap: 6px;
+        padding: 4px 0;
+        min-height: 94px;
+        perspective: 800px;
     }
-    [data-testid="stImage"] img:hover {
-        transform: translateY(-4px) !important;
+    .cards-row--empty { min-height: 90px; }
+    .card-img {
+        border-radius: 5px;
+        box-shadow:
+            0 10px 24px rgba(0,0,0,0.8),
+            0 2px 6px rgba(0,0,0,0.5);
+        border: 1px solid rgba(255,255,255,0.08);
+        transition: transform 0.2s ease;
+        animation: deal-card 0.55s cubic-bezier(.2,.7,.3,1.15) both;
+        transform-origin: 50% 100%;
+    }
+    .card-img:hover {
+        transform: translateY(-6px);
+    }
+    @keyframes deal-card {
+        0% {
+            transform: translate(0, -140px) rotate(-18deg) scale(0.85);
+            opacity: 0;
+        }
+        55% { opacity: 1; }
+        100% {
+            transform: translate(0, 0) rotate(0) scale(1);
+            opacity: 1;
+        }
     }
 
-    /* ── All buttons base ── */
+    /* ── Action buttons (deal, hit, stand, reset, hand selector) ───────── */
     .stButton > button {
         font-family: 'Inter', sans-serif !important;
         text-transform: uppercase !important;
-        letter-spacing: 0.12em !important;
-        font-size: 0.75rem !important;
+        letter-spacing: 0.14em !important;
+        font-size: 0.78rem !important;
         font-weight: 600 !important;
         border-radius: 6px !important;
         transition: all 0.14s ease !important;
@@ -390,108 +398,228 @@ def inject_styles():
     .stButton > button[kind="primary"]:hover:not([disabled]) {
         background: linear-gradient(180deg, var(--gold-light) 0%, var(--gold) 100%) !important;
         transform: translateY(-2px) !important;
-        box-shadow: 0 4px 18px rgba(212,175,55,0.5) !important;
+        box-shadow: 0 4px 18px rgba(212,175,55,0.55) !important;
     }
     .stButton > button:active:not([disabled]) {
         transform: translateY(1px) !important;
     }
     .stButton > button[disabled] {
-        opacity: 0.25 !important;
+        opacity: 0.3 !important;
+        filter: grayscale(0.3);
     }
 
-    /* ── Chip buttons (5-column horizontal block) ── */
-    [data-testid="stHorizontalBlock"]:has(> [data-testid="stColumn"]:nth-child(5)) [data-testid="stColumn"] {
+    /* ──────────────────────────────────────────────────────────────────
+       REALISTIC CHIP BUTTONS
+       Scoped to the container wrapper `st.container(key="chips_row")`,
+       which Streamlit renders with class `st-key-chips_row`. Before, we
+       targeted "any 5-column block" — that leaked into card rows and made
+       cards show chip styling on hover. Each chip is two layered
+       gradients: colored body on top, white edge-spot conic underneath.
+       ────────────────────────────────────────────────────────────────── */
+
+    .st-key-chips_row [data-testid="stColumn"] {
         display: flex !important;
         justify-content: center !important;
     }
-    [data-testid="stHorizontalBlock"]:has(> [data-testid="stColumn"]:nth-child(5)) button {
+    .st-key-chips_row button {
         border-radius: 50% !important;
-        width: 60px !important; min-width: 60px !important; max-width: 60px !important;
-        height: 60px !important; min-height: 60px !important;
+        width: 74px !important;  min-width: 74px !important;  max-width: 74px !important;
+        height: 74px !important; min-height: 74px !important;
         padding: 0 !important;
-        font-size: 0.75rem !important; font-weight: 700 !important;
-        letter-spacing: 0.02em !important; text-transform: none !important;
-        outline-offset: -6px !important;
-        box-shadow: 0 5px 14px rgba(0,0,0,0.55), inset 0 1px 2px rgba(255,255,255,0.15) !important;
+        font-family: 'Bebas Neue', Impact, sans-serif !important;
+        font-size: 1.15rem !important;
+        font-weight: 400 !important;
+        letter-spacing: 0.03em !important;
+        text-transform: none !important;
+        border: none !important;
+        box-shadow:
+            0 7px 14px rgba(0,0,0,0.6),
+            0 2px 4px rgba(0,0,0,0.4),
+            inset 0 2px 3px rgba(255,255,255,0.3),
+            inset 0 -3px 4px rgba(0,0,0,0.3) !important;
     }
-    [data-testid="stHorizontalBlock"]:has(> [data-testid="stColumn"]:nth-child(5)) button:hover:not([disabled]) {
-        transform: translateY(-6px) !important;
-        box-shadow: 0 10px 22px rgba(0,0,0,0.7), 0 0 0 2px rgba(212,175,55,0.35) !important;
+    .st-key-chips_row button:hover:not([disabled]) {
+        transform: translateY(-7px) rotate(-3deg) !important;
+        box-shadow:
+            0 14px 22px rgba(0,0,0,0.75),
+            0 0 0 3px rgba(212,175,55,0.55),
+            inset 0 2px 3px rgba(255,255,255,0.35),
+            inset 0 -3px 4px rgba(0,0,0,0.3) !important;
     }
-    /* $1 white */
-    [data-testid="stHorizontalBlock"]:has(> [data-testid="stColumn"]:nth-child(5)) [data-testid="stColumn"]:nth-child(1) button {
-        background: linear-gradient(145deg,#f5f5f5,#b8b8b8) !important;
-        color:#222 !important; border-color:#888 !important;
-        outline: 2px solid rgba(255,255,255,0.3) !important;
+    .st-key-chips_row button:focus:not(:hover) { outline: none !important; }
+
+    /* $1 — white chip / black edge spots */
+    .st-key-chips_row [data-testid="stColumn"]:nth-child(1) button {
+        background:
+            radial-gradient(circle,
+                #ffffff 0%, #ffffff 46%,
+                #7b7b7b 46%, #7b7b7b 50%,
+                transparent 50%),
+            repeating-conic-gradient(from 11.25deg,
+                #2a2a2a 0deg 22.5deg,
+                #f0f0f0 22.5deg 45deg) !important;
+        color: #222 !important;
     }
-    /* $5 red */
-    [data-testid="stHorizontalBlock"]:has(> [data-testid="stColumn"]:nth-child(5)) [data-testid="stColumn"]:nth-child(2) button {
-        background: linear-gradient(145deg,#e74c3c,#a93226) !important;
-        color:#fff !important; border-color:#7b241c !important;
-        outline: 2px solid rgba(255,100,90,0.35) !important;
+    /* $5 — red chip / white edge spots */
+    .st-key-chips_row [data-testid="stColumn"]:nth-child(2) button {
+        background:
+            radial-gradient(circle,
+                #e74c3c 0%, #c0392b 46%,
+                #8b2410 46%, #8b2410 50%,
+                transparent 50%),
+            repeating-conic-gradient(from 11.25deg,
+                #ffffff 0deg 22.5deg,
+                #8b2410 22.5deg 45deg) !important;
+        color: #fff !important;
+        text-shadow: 0 1px 2px rgba(0,0,0,0.6) !important;
     }
-    /* $25 green */
-    [data-testid="stHorizontalBlock"]:has(> [data-testid="stColumn"]:nth-child(5)) [data-testid="stColumn"]:nth-child(3) button {
-        background: linear-gradient(145deg,#2ecc71,#1a7a40) !important;
-        color:#fff !important; border-color:#145a32 !important;
-        outline: 2px solid rgba(80,200,120,0.35) !important;
+    /* $25 — green chip / white edge spots */
+    .st-key-chips_row [data-testid="stColumn"]:nth-child(3) button {
+        background:
+            radial-gradient(circle,
+                #2ecc71 0%, #1a7a40 46%,
+                #0f5230 46%, #0f5230 50%,
+                transparent 50%),
+            repeating-conic-gradient(from 11.25deg,
+                #ffffff 0deg 22.5deg,
+                #0f5230 22.5deg 45deg) !important;
+        color: #fff !important;
+        text-shadow: 0 1px 2px rgba(0,0,0,0.6) !important;
     }
-    /* $100 slate */
-    [data-testid="stHorizontalBlock"]:has(> [data-testid="stColumn"]:nth-child(5)) [data-testid="stColumn"]:nth-child(4) button {
-        background: linear-gradient(145deg,#5d6d7e,#2c3e50) !important;
-        color:#fff !important; border-color:#17202a !important;
-        outline: 2px solid rgba(120,150,170,0.3) !important;
+    /* $100 — navy chip / white edge spots */
+    .st-key-chips_row [data-testid="stColumn"]:nth-child(4) button {
+        background:
+            radial-gradient(circle,
+                #34495e 0%, #2c3e50 46%,
+                #17202a 46%, #17202a 50%,
+                transparent 50%),
+            repeating-conic-gradient(from 11.25deg,
+                #ffffff 0deg 22.5deg,
+                #17202a 22.5deg 45deg) !important;
+        color: #fff !important;
+        text-shadow: 0 1px 2px rgba(0,0,0,0.6) !important;
     }
-    /* $500 purple */
-    [data-testid="stHorizontalBlock"]:has(> [data-testid="stColumn"]:nth-child(5)) [data-testid="stColumn"]:nth-child(5) button {
-        background: linear-gradient(145deg,#a569bd,#7d3c98) !important;
-        color:#fff !important; border-color:#5b2c6f !important;
-        outline: 2px solid rgba(180,130,210,0.35) !important;
+    /* $500 — purple chip / white edge spots */
+    .st-key-chips_row [data-testid="stColumn"]:nth-child(5) button {
+        background:
+            radial-gradient(circle,
+                #a569bd 0%, #7d3c98 46%,
+                #4a1f60 46%, #4a1f60 50%,
+                transparent 50%),
+            repeating-conic-gradient(from 11.25deg,
+                #ffffff 0deg 22.5deg,
+                #4a1f60 22.5deg 45deg) !important;
+        color: #fff !important;
+        text-shadow: 0 1px 2px rgba(0,0,0,0.6) !important;
     }
 
-    /* ── Bankroll metric ── */
-    [data-testid="metric-container"] {
-        background: rgba(0,0,0,0.3) !important;
-        border: 1px solid rgba(212,175,55,0.25) !important;
-        border-radius: 10px !important;
-        padding: 12px 16px !important;
+    /* ── Clickable bet-circle buttons (shown during betting) ──────────────
+       Each of the 3 bet slots is wrapped in st.container(key="bet_circle_N"),
+       which emits class `st-key-bet_circle_N`. The container is a
+       stVerticalBlock (flex-direction: column), so horizontal centering
+       needs `align-items: center`, not `justify-content`. */
+    [class*="st-key-bet_circle_"] {
+        align-items: center !important;
+        margin: 6px 0 10px !important;
+    }
+    [class*="st-key-bet_circle_"] [data-testid="stElementContainer"] {
+        width: auto !important;
+    }
+    [class*="st-key-bet_circle_"] button {
+        width: 96px !important;
+        height: 96px !important;
+        min-width: 96px !important;
+        max-width: 96px !important;
+        padding: 0 !important;
+        border-radius: 50% !important;
+        border: 3px dashed rgba(245,236,215,0.3) !important;
+        background: rgba(0,0,0,0.2) !important;
+        color: rgba(245,236,215,0.55) !important;
+        font-family: 'Bebas Neue', Impact, sans-serif !important;
+        font-size: 1.05rem !important;
+        font-weight: 400 !important;
+        letter-spacing: 0.14em !important;
+        text-transform: none !important;
+        box-shadow: inset 0 2px 10px rgba(0,0,0,0.35) !important;
+        transition: all 0.25s ease !important;
+    }
+    [class*="st-key-bet_circle_"] button:hover:not([disabled]) {
+        border-color: rgba(212,175,55,0.7) !important;
+        color: #efd58a !important;
+        background: rgba(212,175,55,0.08) !important;
+        box-shadow: 0 0 18px rgba(212,175,55,0.35), inset 0 2px 10px rgba(0,0,0,0.35) !important;
+        transform: scale(1.04) !important;
+    }
+    [class*="st-key-bet_circle_"] button[kind="primary"] {
+        border-color: #d4af37 !important;
+        background: rgba(212,175,55,0.18) !important;
+        color: #d4af37 !important;
+        font-size: 1.35rem !important;
+        font-weight: 700 !important;
+        letter-spacing: 0 !important;
+        box-shadow: 0 0 26px rgba(212,175,55,0.6), inset 0 2px 10px rgba(0,0,0,0.35) !important;
+    }
+    [class*="st-key-bet_circle_"] button[kind="primary"]:hover {
+        transform: scale(1.06) !important;
+    }
+    [class*="st-key-bet_circle_"] button:focus:not(:hover) { outline: none !important; }
+
+    /* ── Bankroll metric ───────────────────────────────────────────────── */
+    [data-testid="stMetric"] {
+        background: linear-gradient(180deg, rgba(0,0,0,0.45) 0%, rgba(0,0,0,0.22) 100%) !important;
+        border: 1.5px solid rgba(212,175,55,0.35) !important;
+        border-radius: 12px !important;
+        padding: 14px 20px !important;
+        box-shadow: inset 0 1px 0 rgba(255,255,255,0.08), 0 6px 14px rgba(0,0,0,0.35) !important;
+        text-align: center !important;
     }
     [data-testid="stMetricLabel"] p {
-        font-family: 'Inter', sans-serif !important;
-        font-size: 0.6rem !important; text-transform: uppercase !important;
-        letter-spacing: 0.22em !important; color: var(--gold-light) !important; opacity: 0.8 !important;
+        font-family: 'Bebas Neue', Impact, sans-serif !important;
+        font-size: 0.8rem !important;
+        text-transform: uppercase !important;
+        letter-spacing: 0.26em !important;
+        color: var(--gold-light) !important;
     }
     [data-testid="stMetricValue"] {
-        font-family: 'Cormorant Garamond', serif !important;
-        font-size: 1.9rem !important; color: var(--cream) !important;
+        font-family: 'Playfair Display', serif !important;
+        font-size: 2.1rem !important;
+        color: var(--gold) !important;
+        text-shadow: 0 2px 8px rgba(0,0,0,0.5);
     }
 
-    /* ── Small labels ── */
+    /* ── Small section labels ──────────────────────────────────────────── */
     .section-label {
-        font-family: 'Inter', sans-serif;
+        font-family: 'Bebas Neue', Impact, sans-serif;
         color: var(--gold-light);
-        font-size: 0.62rem;
+        font-size: 0.9rem;
         text-transform: uppercase;
-        letter-spacing: 0.22em;
-        opacity: 0.72;
-        margin: 0.6rem 0 0.2rem;
+        letter-spacing: 0.28em;
+        opacity: 0.92;
+        text-align: center;
+        margin: 0.9rem 0 0.5rem;
     }
 
-    /* ── Caption ── */
+    /* ── Caption (playing-hand indicator) ──────────────────────────────── */
     [data-testid="stCaptionContainer"] p {
         color: var(--gold-light) !important;
-        font-size: 0.62rem !important;
+        font-size: 0.7rem !important;
         text-transform: uppercase !important;
-        letter-spacing: 0.2em !important;
-        opacity: 0.65 !important;
+        letter-spacing: 0.22em !important;
+        opacity: 0.8 !important;
         text-align: center !important;
     }
 
-    /* ── Warning / alert ── */
+    /* ── Alert (out-of-chips warning) ──────────────────────────────────── */
+    [data-testid="stAlert"] {
+        background: rgba(200,50,40,0.12) !important;
+        border: 1px solid rgba(231,76,60,0.4) !important;
+        border-radius: 10px !important;
+    }
     [data-testid="stAlert"] p {
-        font-family: 'Cormorant Garamond', serif !important;
-        font-size: 1.2rem !important;
+        font-family: 'Playfair Display', serif !important;
+        font-size: 1.3rem !important;
         font-weight: 600 !important;
+        color: var(--cream) !important;
     }
     </style>
     """, unsafe_allow_html=True)
@@ -500,14 +628,34 @@ def inject_styles():
 # Render helpers
 # ---------------------------------------------------------------------------
 
-def render_cards(cards, width=80):
+def render_cards(cards, width=72):
+    """Render a hand's cards as a centered, animated flex row.
+
+    Uses raw HTML (<img>) instead of st.image for three reasons:
+      1. Centering: flex + justify-content avoids the left-biased column grid.
+      2. Animation: each card gets a CSS keyframe with a staggered delay.
+      3. No phantom chip on hover: st.image wraps images in a Streamlit
+         button (fullscreen toggle) that picked up our chip-button styling.
+    """
     if not cards:
-        st.write("")
+        st.markdown(
+            '<div class="cards-row cards-row--empty"></div>',
+            unsafe_allow_html=True,
+        )
         return
-    cols = st.columns(max(len(cards), 5))
+
+    imgs = []
     for i, card in enumerate(cards):
-        with cols[i]:
-            st.image(card_url(card), width=width)
+        delay = f"{i * 0.09:.2f}s"
+        imgs.append(
+            f'<img class="card-img" src="{card_url(card)}" '
+            f'style="width:{width}px; animation-delay:{delay};" '
+            f'alt="{card}">'
+        )
+    st.markdown(
+        f'<div class="cards-row">{"".join(imgs)}</div>',
+        unsafe_allow_html=True,
+    )
 
 
 def render_bet_circle(bet, status):
@@ -517,35 +665,37 @@ def render_bet_circle(bet, status):
     is_active     = status == "active"
 
     if resolved_win:
-        bg, border, color = "rgba(46,204,113,0.18)", "#2ecc71", "#2ecc71"
+        bg, border, color = "rgba(46,204,113,0.16)", "#2ecc71", "#2ecc71"
     elif resolved_lose:
-        bg, border, color = "rgba(231,76,60,0.18)",  "#e74c3c", "#e74c3c"
+        bg, border, color = "rgba(231,76,60,0.16)",  "#e74c3c", "#e74c3c"
     elif resolved_push:
-        bg, border, color = "rgba(150,160,150,0.18)","#95a5a6", "#95a5a6"
+        bg, border, color = "rgba(150,160,150,0.16)","#95a5a6", "#95a5a6"
     elif is_active:
-        bg, border, color = "rgba(212,175,55,0.2)",  "#d4af37", "#d4af37"
+        bg, border, color = "rgba(212,175,55,0.18)", "#d4af37", "#d4af37"
     elif bet > 0:
-        bg, border, color = "rgba(212,175,55,0.12)", "rgba(212,175,55,0.5)", "#efd58a"
+        bg, border, color = "rgba(212,175,55,0.1)",  "rgba(212,175,55,0.6)", "#efd58a"
     else:
-        bg, border, color = "rgba(255,255,255,0.04)","rgba(255,255,255,0.12)", "rgba(255,255,255,0.2)"
+        bg, border, color = "rgba(0,0,0,0.18)",      "rgba(245,236,215,0.25)", "rgba(245,236,215,0.45)"
 
-    glow  = "0 0 18px rgba(212,175,55,0.45)" if is_active else "none"
-    text  = f"${bet}" if bet > 0 else "BET"
-    fsize = "1.1rem" if bet > 0 else "0.6rem"
-    fw    = "700" if bet > 0 else "400"
-    ls    = "0" if bet > 0 else "0.12em"
+    glow = "0 0 22px rgba(212,175,55,0.55)" if is_active else "none"
+
+    if bet > 0:
+        text, fsize, fw, ls, font = f"${bet}", "1.6rem", "700", "0", "'Playfair Display',serif"
+    else:
+        text, fsize, fw, ls, font = "BET", "0.85rem", "400", "0.22em", "'Bebas Neue',Impact,sans-serif"
 
     st.markdown(f"""
     <div style="
-        width:62px; height:62px; border-radius:50%;
-        background:{bg}; border:2px dashed {border};
-        box-shadow:{glow};
+        width:96px; height:96px; border-radius:50%;
+        background:{bg};
+        border:3px dashed {border};
+        box-shadow:{glow}, inset 0 2px 10px rgba(0,0,0,0.35);
         display:flex; align-items:center; justify-content:center;
-        margin:4px auto 6px;
-        font-family:'Cormorant Garamond',serif;
+        margin: 6px auto 10px;
+        font-family:{font};
         font-size:{fsize}; font-weight:{fw};
         color:{color}; letter-spacing:{ls};
-        transition:all 0.2s;
+        transition:all 0.3s;
     ">{text}</div>
     """, unsafe_allow_html=True)
 
@@ -577,21 +727,39 @@ def render_hand_column(hand_idx):
     status = ss.hand_statuses[hand_idx]
     val    = hand_value(hand) if hand else 0
 
-    is_active = (status == "active")
-    label_color = "#d4af37" if is_active else "#c8b89a"
-    label = f"Hand {hand_idx + 1}" + (f"  —  {val}" if val else "")
+    is_betting  = ss.status == "betting"
+    is_active   = (status == "active")
+    is_selected = is_betting and ss.selected_hand == hand_idx
+    highlighted = is_active or is_selected
 
-    shadow = "text-shadow:0 0 12px rgba(212,175,55,0.5);" if is_active else ""
+    label_color = "#d4af37" if highlighted else "#e5d2a0"
+    shadow      = "text-shadow:0 0 14px rgba(212,175,55,0.55);" if highlighted else ""
+    label       = f"HAND {hand_idx + 1}" + (f"  ·  {val}" if val else "")
+
     st.markdown(
-        f'<div style="font-family:\'Cormorant Garamond\',serif;font-size:1.05rem;'
-        f'font-weight:600;color:{label_color};text-align:center;'
-        f'letter-spacing:0.06em;margin-bottom:0;{shadow}">{label}</div>',
+        f'<div style="font-family:\'Bebas Neue\',Impact,sans-serif;'
+        f'font-size:0.95rem;font-weight:400;color:{label_color};text-align:center;'
+        f'letter-spacing:0.24em;margin-bottom:2px;{shadow}">{label}</div>',
         unsafe_allow_html=True,
     )
 
-    render_bet_circle(bet, status)
+    if is_betting:
+        render_bet_button(hand_idx, bet, is_selected)
+    else:
+        render_bet_circle(bet, status)
+
     render_cards(hand, width=62)
     render_hand_badge(status)
+
+
+def render_bet_button(hand_idx, bet, is_selected):
+    """The bet spot during betting — clickable to select that hand."""
+    label = f"${bet}" if bet > 0 else "BET"
+    btype = "primary" if is_selected else "secondary"
+    with st.container(key=f"bet_circle_{hand_idx}"):
+        if st.button(label, key=f"bet_btn_{hand_idx}", type=btype):
+            st.session_state.selected_hand = hand_idx
+            st.rerun()
 
 # ---------------------------------------------------------------------------
 # Main app
@@ -609,23 +777,37 @@ def main():
     reveal_dealer = is_resolved
     broke = ss.bankroll == 0 and sum(ss.bets) == 0 and is_betting
 
-    # ── Table top rail ────────────────────────────────────────────────────────
+    # ── Banner: arched casino headline (inline SVG for the curve) ────────
     st.markdown("""
-    <div class="table-top-rail">
-        <div style="font-family:'Cormorant Garamond',serif; color:#d4af37;
-                    font-size:clamp(1.8rem,4vw,2.6rem); letter-spacing:0.12em;
-                    text-shadow:0 2px 12px rgba(0,0,0,0.7),0 0 28px rgba(212,175,55,0.3);">
-            ♠ &nbsp; Blackjack &nbsp; ♣
-        </div>
-        <div style="font-family:'Inter',sans-serif; color:#efd58a;
-                    font-size:0.62rem; text-transform:uppercase; letter-spacing:0.26em;
-                    opacity:0.7; margin-top:5px;">
-            Dealer stands on 17 &nbsp;·&nbsp; Blackjack pays 3 to 2 &nbsp;·&nbsp; 3 hands
-        </div>
+    <div class="table-banner">
+      <svg class="banner-svg" viewBox="0 0 1000 200" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <path id="arcMain" d="M 80 160 Q 500 30 920 160" fill="none"/>
+          <path id="arcSub"  d="M 130 190 Q 500 115 870 190" fill="none"/>
+          <linearGradient id="goldGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+            <stop offset="0%"   stop-color="#f6e6a7"/>
+            <stop offset="45%"  stop-color="#d4af37"/>
+            <stop offset="100%" stop-color="#7a5f18"/>
+          </linearGradient>
+        </defs>
+        <text font-family="'Bebas Neue', Impact, sans-serif" font-size="62"
+              fill="url(#goldGrad)" letter-spacing="4" text-anchor="middle">
+          <textPath href="#arcMain" startOffset="50%">
+            BLACKJACK PAYS 3 TO 2
+          </textPath>
+        </text>
+        <text font-family="'Bebas Neue', Impact, sans-serif" font-size="22"
+              fill="#efd58a" opacity="0.9" letter-spacing="3" text-anchor="middle">
+          <textPath href="#arcSub" startOffset="50%">
+            DEALER MUST DRAW TO 16 AND HIT ON SOFT 17
+          </textPath>
+        </text>
+      </svg>
+      <div class="banner-insurance">INSURANCE PAYS 2 TO 1</div>
     </div>
     """, unsafe_allow_html=True)
 
-    # ── Dealer section ────────────────────────────────────────────────────────
+    # ── Dealer section ───────────────────────────────────────────────────
     st.markdown('<div class="dealer-area">', unsafe_allow_html=True)
     if ss.dealer:
         d_cards = ss.dealer if reveal_dealer else [ss.dealer[0], "back"]
@@ -637,10 +819,10 @@ def main():
     render_cards(d_cards, width=72)
     st.markdown('</div>', unsafe_allow_html=True)
 
-    # ── Gold table rail ───────────────────────────────────────────────────────
+    # ── Gold rail ────────────────────────────────────────────────────────
     st.markdown('<div class="gold-rail"></div>', unsafe_allow_html=True)
 
-    # ── Player hand columns ───────────────────────────────────────────────────
+    # ── Player hand columns (3 bet zones) ────────────────────────────────
     st.markdown('<div class="player-area">', unsafe_allow_html=True)
     col0, col1, col2 = st.columns(3)
     with col0: render_hand_column(0)
@@ -648,38 +830,29 @@ def main():
     with col2: render_hand_column(2)
     st.markdown('</div>', unsafe_allow_html=True)
 
-    # ── Controls ──────────────────────────────────────────────────────────────
+    # ── Controls ─────────────────────────────────────────────────────────
     st.markdown('<div class="controls-area">', unsafe_allow_html=True)
     st.markdown("---")
 
-    # Bankroll
     st.metric("Bankroll", f"${ss.bankroll}")
 
     if is_betting and not broke:
-        # Hand selector
-        st.markdown('<p class="section-label">Betting on</p>', unsafe_allow_html=True)
-        sel0, sel1, sel2 = st.columns(3)
-        for idx, col in enumerate([sel0, sel1, sel2]):
-            with col:
-                bet_label = f"Hand {idx + 1}  ${ss.bets[idx]}" if ss.bets[idx] else f"Hand {idx + 1}"
-                if st.button(
-                    bet_label,
-                    key=f"sel_{idx}",
-                    type="primary" if ss.selected_hand == idx else "secondary",
-                    use_container_width=True,
-                ):
-                    ss.selected_hand = idx
-                    st.rerun()
-
-        # Chips
-        st.markdown('<p class="section-label">Chips</p>', unsafe_allow_html=True)
-        chip_cols = st.columns(len(CHIP_VALUES))
-        for i, value in enumerate(CHIP_VALUES):
-            with chip_cols[i]:
-                if st.button(f"${value}", key=f"chip_{value}",
-                             disabled=value > ss.bankroll):
-                    place_bet(value)
-                    st.rerun()
+        # Chips — the wrapping container gives a stable `st-key-chips_row`
+        # class that the chip CSS in inject_styles targets.
+        selected = ss.selected_hand + 1
+        st.markdown(
+            f'<p class="section-label">Betting on Hand {selected}  '
+            '<span style="opacity:0.6;">— click a bet circle to switch</span></p>',
+            unsafe_allow_html=True,
+        )
+        with st.container(key="chips_row"):
+            chip_cols = st.columns(len(CHIP_VALUES))
+            for i, value in enumerate(CHIP_VALUES):
+                with chip_cols[i]:
+                    if st.button(f"${value}", key=f"chip_{value}",
+                                 disabled=value > ss.bankroll):
+                        place_bet(value)
+                        st.rerun()
 
         # Deal / Clear
         st.write("")
@@ -712,13 +885,13 @@ def main():
                      use_container_width=True, key="btn_reset"):
             reset_bankroll(); st.rerun()
 
-    # ── Table bottom rail ─────────────────────────────────────────────────────
+    # ── Table bottom rail ────────────────────────────────────────────────
     st.markdown('</div>', unsafe_allow_html=True)
     st.markdown("""
     <div class="table-bottom-rail">
-        <span style="font-family:'Inter',sans-serif; color:#efd58a;
-                     font-size:0.6rem; text-transform:uppercase;
-                     letter-spacing:0.2em; opacity:0.55;">
+        <span style="font-family:'Bebas Neue',Impact,sans-serif; color:#efd58a;
+                     font-size:0.75rem; text-transform:uppercase;
+                     letter-spacing:0.24em; opacity:0.7;">
             Aces 1 or 11 &nbsp;·&nbsp; Face cards 10
             &nbsp;·&nbsp; Dealer hits on 16, stands on 17
         </span>
