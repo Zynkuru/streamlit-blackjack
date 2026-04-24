@@ -6,8 +6,7 @@ A popular game played at casinos but this game features 3 hands!
 
 - Standard Blackjack rules (dealer stands on 17, blackjack pays 3:2)
 - $1,000 starting bankroll with chips of $1, $5, $25, $100, and $500
-- Hit, Stand, Deal, Clear Bet, Next Hand, and Reset Bankroll actions
-- Face-down dealer hole card until the hand resolves
+- Hit, Stand, Deal, Clear Bet, Next Hand, and Reset Bankroll state actions
 - 100% Python
 
 ## Website
