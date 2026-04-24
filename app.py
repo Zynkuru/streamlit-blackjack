@@ -7,7 +7,9 @@ Run locally with:
 """
 
 import random
+import time
 import streamlit as st
+import streamlit.components.v1 as components
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -103,6 +105,14 @@ def init_state():
 # Game actions
 # ---------------------------------------------------------------------------
 
+def queue_sound(kind):
+    """Remember a sound to play on the next page render.
+
+    The game actions don't play sound directly — they just leave the name in
+    session_state, and main() reads it back and plays it on the rerun.
+    """
+    st.session_state.pending_sound = kind
+
 def place_bet(amount):
     """Move `amount` from the bankroll onto the currently selected hand."""
     ss = st.session_state
@@ -114,6 +124,7 @@ def place_bet(amount):
         return
     ss.bankroll -= amount
     ss.bets[ss.selected_hand] += amount
+    queue_sound("chip")
 
 def clear_bet(hand_idx):
     """Put the chips on hand `hand_idx` back into the bankroll."""
@@ -135,6 +146,26 @@ def _settle_hand(i):
     elif hs == "push":
         ss.bankroll += bet
     # bust / lost: the bet was already subtracted in place_bet
+
+def _queue_outcome_sound():
+    """After a round resolves, pick a win/lose sound from the hand statuses."""
+    ss = st.session_state
+    any_win = False
+    any_loss = False
+    for i in range(NUM_HANDS):
+        if ss.bets[i] <= 0:
+            continue
+        s = ss.hand_statuses[i]
+        if s == "won" or s == "blackjack_win":
+            any_win = True
+        if s == "lost" or s == "bust":
+            any_loss = True
+    # If both a win and a loss happened, a win is the louder moment
+    if any_win:
+        queue_sound("win")
+    elif any_loss:
+        queue_sound("lose")
+    # All pushes: stay silent
 
 def _dealer_play():
     """Dealer draws until 17+, then compare each still-in hand to the dealer."""
@@ -172,6 +203,7 @@ def _dealer_play():
 
     ss.status = "resolved"
     ss.active_hand = -1
+    _queue_outcome_sound()
 
 def _advance_hand():
     """Move play to the next waiting hand, or let the dealer play if none."""
@@ -239,9 +271,12 @@ def deal_hand():
         ss.hand_statuses[first_playable] = "active"
         ss.active_hand = first_playable
         ss.status = "playing"
+        queue_sound("card")
     else:
+        # Everyone got an instant blackjack / push / lost on the deal
         ss.active_hand = -1
         ss.status = "resolved"
+        _queue_outcome_sound()
 
 def hit():
     """Player takes a card on the active hand; 22+ means bust → move on."""
@@ -252,9 +287,10 @@ def hit():
     if idx < 0:
         return
     ss.hands[idx].append(ss.deck.pop())
+    queue_sound("card")
     if hand_value(ss.hands[idx]) > 21:
         ss.hand_statuses[idx] = "bust"
-        _advance_hand()
+        _advance_hand()  # may overwrite sound with win/lose if round ends
 
 def stand():
     """Player keeps their current total; move to the next hand."""
@@ -265,6 +301,38 @@ def stand():
     if idx < 0:
         return
     ss.hand_statuses[idx] = "stand"
+    _advance_hand()
+
+def double_down():
+    """Double the current bet, take exactly one more card, then auto-stand.
+
+    Classic rule: only legal on a fresh two-card hand, and the player must
+    have enough bankroll to match the original bet.
+    """
+    ss = st.session_state
+    idx = ss.active_hand
+    if ss.status != "playing":
+        return
+    if idx < 0:
+        return
+    # Doubling is only legal on the initial two-card hand
+    if len(ss.hands[idx]) != 2:
+        return
+    current_bet = ss.bets[idx]
+    if current_bet > ss.bankroll:
+        return
+
+    # Match the existing bet
+    ss.bankroll -= current_bet
+    ss.bets[idx] += current_bet
+
+    # Take exactly one card, no more hits after this
+    ss.hands[idx].append(ss.deck.pop())
+    queue_sound("card")
+    if hand_value(ss.hands[idx]) > 21:
+        ss.hand_statuses[idx] = "bust"
+    else:
+        ss.hand_statuses[idx] = "stand"
     _advance_hand()
 
 def new_hand():
@@ -700,6 +768,97 @@ def inject_styles():
     """, unsafe_allow_html=True)
 
 # ---------------------------------------------------------------------------
+# Sound helper
+# ---------------------------------------------------------------------------
+
+def play_sound(kind):
+    """Play a short synthesized sound via the Web Audio API.
+
+    We render a hidden iframe (height=0) that contains a <script> tag. The
+    script builds a tiny audio graph on the fly — no network calls, no audio
+    files shipped with the app. Each `kind` gets its own little tune.
+
+    To make the browser actually re-trigger the sound on repeated calls, the
+    HTML we hand to components.html must differ every time. We add a
+    time-based comment into the script as a cache-buster.
+    """
+    # Tiny per-kind audio programs (JavaScript strings).
+    # All of them build an OscillatorNode + GainNode and ramp the gain down
+    # so the note fades instead of cutting off abruptly.
+    if kind == "chip":
+        # Short, bright click — like a chip hitting the felt
+        script = """
+          const ctx = new (window.AudioContext || window.webkitAudioContext)();
+          const o = ctx.createOscillator();
+          const g = ctx.createGain();
+          o.connect(g); g.connect(ctx.destination);
+          o.type = 'square';
+          o.frequency.value = 900;
+          g.gain.setValueAtTime(0.08, ctx.currentTime);
+          g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.05);
+          o.start();
+          o.stop(ctx.currentTime + 0.06);
+        """
+    elif kind == "card":
+        # Short downward sweep — like a card sliding across the table
+        script = """
+          const ctx = new (window.AudioContext || window.webkitAudioContext)();
+          const o = ctx.createOscillator();
+          const g = ctx.createGain();
+          o.connect(g); g.connect(ctx.destination);
+          o.type = 'sawtooth';
+          o.frequency.setValueAtTime(450, ctx.currentTime);
+          o.frequency.exponentialRampToValueAtTime(150, ctx.currentTime + 0.12);
+          g.gain.setValueAtTime(0.07, ctx.currentTime);
+          g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.15);
+          o.start();
+          o.stop(ctx.currentTime + 0.16);
+        """
+    elif kind == "win":
+        # Three rising notes (C5 → E5 → G5) — a little arpeggio
+        script = """
+          const ctx = new (window.AudioContext || window.webkitAudioContext)();
+          function tone(freq, start, dur) {
+            const o = ctx.createOscillator();
+            const g = ctx.createGain();
+            o.connect(g); g.connect(ctx.destination);
+            o.type = 'sine';
+            o.frequency.value = freq;
+            const t = ctx.currentTime + start;
+            g.gain.setValueAtTime(0.14, t);
+            g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+            o.start(t);
+            o.stop(t + dur + 0.02);
+          }
+          tone(523.25, 0.00, 0.15);
+          tone(659.25, 0.12, 0.17);
+          tone(783.99, 0.26, 0.35);
+        """
+    elif kind == "lose":
+        # One long downward slide — sad trombone-ish
+        script = """
+          const ctx = new (window.AudioContext || window.webkitAudioContext)();
+          const o = ctx.createOscillator();
+          const g = ctx.createGain();
+          o.connect(g); g.connect(ctx.destination);
+          o.type = 'triangle';
+          o.frequency.setValueAtTime(350, ctx.currentTime);
+          o.frequency.exponentialRampToValueAtTime(90, ctx.currentTime + 0.55);
+          g.gain.setValueAtTime(0.13, ctx.currentTime);
+          g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.6);
+          o.start();
+          o.stop(ctx.currentTime + 0.6);
+        """
+    else:
+        return
+
+    # Unique timestamp comment → the HTML string differs each call →
+    # Streamlit re-mounts the iframe → the script runs fresh.
+    stamp = time.time_ns()
+    html = f"<script>/* play {kind} {stamp} */ {script}</script>"
+    components.html(html, height=0)
+
+# ---------------------------------------------------------------------------
 # Render helpers
 # ---------------------------------------------------------------------------
 
@@ -901,6 +1060,13 @@ def main():
     inject_styles()
     init_state()
 
+    # If the previous click queued up a sound, fire it off now (before
+    # anything else renders so the audio starts while the UI paints).
+    pending_sound = st.session_state.get("pending_sound")
+    if pending_sound:
+        play_sound(pending_sound)
+        st.session_state.pending_sound = None
+
     # Pull out the state flags once so the rest of main() is easy to read
     ss = st.session_state
     is_betting = ss.status == "betting"
@@ -1015,18 +1181,30 @@ def main():
                         use_container_width=True, key="btn_clear"):
             for i in range(NUM_HANDS):
                 clear_bet(i)
+            queue_sound("chip")
             st.rerun()
 
     elif is_playing:
         active_idx = ss.active_hand
         active_val = hand_value(ss.hands[active_idx])
+        current_bet = ss.bets[active_idx]
+        num_cards = len(ss.hands[active_idx])
         st.caption(f"Playing Hand {active_idx + 1}  —  value: {active_val}")
-        h_col, s_col = st.columns(2)
+
+        # Double Down is only legal on a fresh two-card hand, and only if
+        # the bankroll has enough to match the existing bet.
+        can_double = num_cards == 2 and current_bet <= ss.bankroll
+
+        h_col, s_col, d_col = st.columns(3)
         if h_col.button("Hit", type="primary", use_container_width=True, key="btn_hit"):
             hit()
             st.rerun()
         if s_col.button("Stand", use_container_width=True, key="btn_stand"):
             stand()
+            st.rerun()
+        if d_col.button("Double", disabled=not can_double,
+                        use_container_width=True, key="btn_double"):
+            double_down()
             st.rerun()
 
     elif is_resolved:
