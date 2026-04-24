@@ -1,7 +1,5 @@
 """
-Blackjack — 3 hands, pure-Python Streamlit app.
-
-Run locally with:
+Can be locally run with:
     pip install -r requirements.txt
     streamlit run app.py
 """
@@ -11,9 +9,7 @@ import time
 import streamlit as st
 import streamlit.components.v1 as components
 
-# ---------------------------------------------------------------------------
 # Constants
-# ---------------------------------------------------------------------------
 
 SUITS  = ["H", "D", "C", "S"]
 RANKS  = ["A","2","3","4","5","6","7","8","9","10","J","Q","K"]
@@ -34,12 +30,10 @@ HAND_BADGE = {
     "push":          ("Push",          "#95a5a6"),
 }
 
-# ---------------------------------------------------------------------------
 # Card utilities
-# ---------------------------------------------------------------------------
 
 def make_deck():
-    """Build a fresh, shuffled 52-card deck like ['7H','AD','10C',...]."""
+    # Builds a new fresh deck of 52 cards for randomization
     deck = []
     for s in SUITS:
         for r in RANKS:
@@ -48,7 +42,7 @@ def make_deck():
     return deck
 
 def card_value(card):
-    """Return the blackjack value of one card. Aces count as 11 here."""
+    # Return the blackjack value of one card and ace card as 11
     r = card[:-1]
     if r == "J" or r == "Q" or r == "K":
         return 10
@@ -57,7 +51,7 @@ def card_value(card):
     return int(r)
 
 def hand_value(hand):
-    """Sum the cards, then downgrade aces from 11 to 1 if we'd bust."""
+    #Sum the cards, then downgrade aces from 11 to 1 if we'd bust
     total = 0
     aces = 0
     for c in hand:
@@ -70,22 +64,20 @@ def hand_value(hand):
     return total
 
 def card_url(card):
-    """URL for the card image on deckofcardsapi.com (or the face-down back)."""
+    #URL for the card image on deckofcardsapi.com (or the face-down back)
     if card == "back":
         return "https://deckofcardsapi.com/static/img/back.png"
     r = card[:-1]
     s = card[-1]
-    # The API uses "0" in the filename for 10 (e.g. "0H.png")
+
     if r == "10":
         r = "0"
     return f"https://deckofcardsapi.com/static/img/{r}{s}.png"
 
-# ---------------------------------------------------------------------------
 # Session state
-# ---------------------------------------------------------------------------
 
 def init_state():
-    """Set up default values in st.session_state on the first run."""
+    #Set up default values in st.session_state on the first run
     defaults = {
         "deck": [],
         "dealer": [],
@@ -101,20 +93,13 @@ def init_state():
         if key not in st.session_state:
             st.session_state[key] = defaults[key]
 
-# ---------------------------------------------------------------------------
 # Game actions
-# ---------------------------------------------------------------------------
 
 def queue_sound(kind):
-    """Remember a sound to play on the next page render.
-
-    The game actions don't play sound directly — they just leave the name in
-    session_state, and main() reads it back and plays it on the rerun.
-    """
     st.session_state.pending_sound = kind
 
 def place_bet(amount):
-    """Move `amount` from the bankroll onto the currently selected hand."""
+    #Move `amount` from the bankroll onto the currently selected hand.
     ss = st.session_state
     if ss.status != "betting":
         return
@@ -127,7 +112,7 @@ def place_bet(amount):
     queue_sound("chip")
 
 def clear_bet(hand_idx):
-    """Put the chips on hand `hand_idx` back into the bankroll."""
+    #Put the chips on hand back into the bankroll
     ss = st.session_state
     if ss.status != "betting":
         return
@@ -135,7 +120,7 @@ def clear_bet(hand_idx):
     ss.bets[hand_idx] = 0
 
 def _settle_hand(i):
-    """Pay out hand `i` according to its final status."""
+    #Pay out hand `i` according to its final status
     ss = st.session_state
     bet = ss.bets[i]
     hs = ss.hand_statuses[i]
@@ -148,7 +133,7 @@ def _settle_hand(i):
     # bust / lost: the bet was already subtracted in place_bet
 
 def _queue_outcome_sound():
-    """After a round resolves, pick a win/lose sound from the hand statuses."""
+    #After a round resolves and pick a win/lose sound from the hand statuses
     ss = st.session_state
     any_win = False
     any_loss = False
@@ -168,7 +153,7 @@ def _queue_outcome_sound():
     # All pushes: stay silent
 
 def _dealer_play():
-    """Dealer draws until 17+, then compare each still-in hand to the dealer."""
+    #Dealer draws until 17+ then compare each still-in hand to the dealer
     ss = st.session_state
 
     # Does any player hand actually need the dealer to draw?
@@ -206,7 +191,7 @@ def _dealer_play():
     _queue_outcome_sound()
 
 def _advance_hand():
-    """Move play to the next waiting hand, or let the dealer play if none."""
+    #Move play to the next waiting hand, or let the dealer play if none
     ss = st.session_state
     for i in range(ss.active_hand + 1, NUM_HANDS):
         if ss.hand_statuses[i] == "waiting":
@@ -216,7 +201,7 @@ def _advance_hand():
     _dealer_play()
 
 def deal_hand():
-    """Start a new round: shuffle, deal 2 cards to each bet hand + dealer."""
+    #Start a new round: shuffle, deal 2 cards to each bet hand + dealer
     ss = st.session_state
     if ss.status != "betting":
         return
@@ -279,7 +264,7 @@ def deal_hand():
         _queue_outcome_sound()
 
 def hit():
-    """Player takes a card on the active hand; 22+ means bust → move on."""
+
     ss = st.session_state
     idx = ss.active_hand
     if ss.status != "playing":
@@ -293,7 +278,6 @@ def hit():
         _advance_hand()  # may overwrite sound with win/lose if round ends
 
 def stand():
-    """Player keeps their current total; move to the next hand."""
     ss = st.session_state
     idx = ss.active_hand
     if ss.status != "playing":
@@ -304,11 +288,6 @@ def stand():
     _advance_hand()
 
 def double_down():
-    """Double the current bet, take exactly one more card, then auto-stand.
-
-    Classic rule: only legal on a fresh two-card hand, and the player must
-    have enough bankroll to match the original bet.
-    """
     ss = st.session_state
     idx = ss.active_hand
     if ss.status != "playing":
@@ -336,7 +315,7 @@ def double_down():
     _advance_hand()
 
 def new_hand():
-    """Clear the table for the next round (keep the bankroll)."""
+
     ss = st.session_state
     ss.hands = [[], [], []]
     ss.dealer = []
@@ -347,13 +326,12 @@ def new_hand():
     ss.selected_hand = 0
 
 def reset_bankroll():
-    """Player went broke — restart with $1000 and a fresh round."""
+
+    #resets to 1000$
     st.session_state.bankroll = STARTING_BANKROLL
     new_hand()
 
-# ---------------------------------------------------------------------------
-# Styles — CSS injected into Streamlit
-# ---------------------------------------------------------------------------
+# Styles — css injected into Streamlit
 
 def inject_styles():
     st.markdown("""
@@ -772,21 +750,10 @@ def inject_styles():
 # ---------------------------------------------------------------------------
 
 def play_sound(kind):
-    """Play a short synthesized sound via the Web Audio API.
 
-    We render a hidden iframe (height=0) that contains a <script> tag. The
-    script builds a tiny audio graph on the fly — no network calls, no audio
-    files shipped with the app. Each `kind` gets its own little tune.
 
-    To make the browser actually re-trigger the sound on repeated calls, the
-    HTML we hand to components.html must differ every time. We add a
-    time-based comment into the script as a cache-buster.
-    """
-    # Tiny per-kind audio programs (JavaScript strings).
-    # All of them build an OscillatorNode + GainNode and ramp the gain down
-    # so the note fades instead of cutting off abruptly.
     if kind == "chip":
-        # Short, bright click — like a chip hitting the felt
+
         script = """
           const ctx = new (window.AudioContext || window.webkitAudioContext)();
           const o = ctx.createOscillator();
@@ -800,7 +767,7 @@ def play_sound(kind):
           o.stop(ctx.currentTime + 0.06);
         """
     elif kind == "card":
-        # Short downward sweep — like a card sliding across the table
+
         script = """
           const ctx = new (window.AudioContext || window.webkitAudioContext)();
           const o = ctx.createOscillator();
@@ -815,7 +782,7 @@ def play_sound(kind):
           o.stop(ctx.currentTime + 0.16);
         """
     elif kind == "win":
-        # Three rising notes (C5 → E5 → G5) — a little arpeggio
+
         script = """
           const ctx = new (window.AudioContext || window.webkitAudioContext)();
           function tone(freq, start, dur) {
@@ -835,7 +802,7 @@ def play_sound(kind):
           tone(783.99, 0.26, 0.35);
         """
     elif kind == "lose":
-        # One long downward slide — sad trombone-ish
+
         script = """
           const ctx = new (window.AudioContext || window.webkitAudioContext)();
           const o = ctx.createOscillator();
@@ -852,24 +819,14 @@ def play_sound(kind):
     else:
         return
 
-    # Unique timestamp comment → the HTML string differs each call →
-    # Streamlit re-mounts the iframe → the script runs fresh.
     stamp = time.time_ns()
     html = f"<script>/* play {kind} {stamp} */ {script}</script>"
     components.html(html, height=0)
 
-# ---------------------------------------------------------------------------
 # Render helpers
-# ---------------------------------------------------------------------------
 
 def render_cards(cards, width=72):
-    """Show a row of cards centered, with a staggered deal-in animation.
 
-    We build raw <img> tags instead of using st.image, because st.image:
-      - lays cards out in a column grid (so they end up left-aligned),
-      - wraps every image in a hidden fullscreen button that our chip CSS
-        was accidentally styling as a red chip on hover.
-    """
     if not cards:
         st.markdown(
             '<div class="cards-row cards-row--empty"></div>',
@@ -889,7 +846,7 @@ def render_cards(cards, width=72):
 
 
 def render_bet_circle(bet, status):
-    """Draw the static dashed circle under a hand (once cards are dealt)."""
+
     # Pick colors based on the current status
     if status == "won" or status == "blackjack_win":
         bg = "rgba(46,204,113,0.16)"
@@ -953,7 +910,7 @@ def render_bet_circle(bet, status):
 
 
 def render_hand_badge(status):
-    """Small 'Your Turn', 'Bust', 'Win!' etc. pill under a hand."""
+
     # HAND_BADGE is the dict defined at the top of the file
     if status in HAND_BADGE:
         text, color = HAND_BADGE[status]
@@ -983,7 +940,6 @@ def render_hand_badge(status):
 
 
 def render_hand_column(hand_idx):
-    """Draw one of the three player columns: label, bet circle, cards, badge."""
     ss = st.session_state
     hand = ss.hands[hand_idx]
     bet = ss.bets[hand_idx]
@@ -1051,23 +1007,20 @@ def render_bet_button(hand_idx, bet, is_selected):
             st.session_state.selected_hand = hand_idx
             st.rerun()
 
-# ---------------------------------------------------------------------------
+
 # Main app
-# ---------------------------------------------------------------------------
+
 
 def main():
     st.set_page_config(page_title="Blackjack", page_icon="♠", layout="centered")
     inject_styles()
     init_state()
 
-    # If the previous click queued up a sound, fire it off now (before
-    # anything else renders so the audio starts while the UI paints).
     pending_sound = st.session_state.get("pending_sound")
     if pending_sound:
         play_sound(pending_sound)
         st.session_state.pending_sound = None
 
-    # Pull out the state flags once so the rest of main() is easy to read
     ss = st.session_state
     is_betting = ss.status == "betting"
     is_playing = ss.status == "playing"
@@ -1075,7 +1028,7 @@ def main():
     reveal_dealer = is_resolved
     broke = ss.bankroll == 0 and sum(ss.bets) == 0 and is_betting
 
-    # ── Banner: arched casino headline (inline SVG for the curve) ────────
+    # Banner
     st.markdown("""
     <div class="table-banner">
       <svg class="banner-svg" viewBox="0 0 1000 200" xmlns="http://www.w3.org/2000/svg">
@@ -1105,11 +1058,11 @@ def main():
     </div>
     """, unsafe_allow_html=True)
 
-    # ── Dealer section ───────────────────────────────────────────────────
+    # Dealer section
     st.markdown('<div class="dealer-area">', unsafe_allow_html=True)
 
     # Decide which dealer cards and total to show. The hole (second) card
-    # stays face-down until the round is resolved.
+    # stays face-down until the round is resolved
     if ss.dealer:
         if reveal_dealer:
             d_cards = ss.dealer
@@ -1128,10 +1081,10 @@ def main():
     render_cards(d_cards, width=72)
     st.markdown('</div>', unsafe_allow_html=True)
 
-    # ── Gold rail ────────────────────────────────────────────────────────
+    # Gold rail
     st.markdown('<div class="gold-rail"></div>', unsafe_allow_html=True)
 
-    # ── Player hand columns (3 bet zones) ────────────────────────────────
+    #Player hand columns (3 bet zones)
     st.markdown('<div class="player-area">', unsafe_allow_html=True)
     col0, col1, col2 = st.columns(3)
     with col0:
@@ -1142,7 +1095,7 @@ def main():
         render_hand_column(2)
     st.markdown('</div>', unsafe_allow_html=True)
 
-    # ── Controls ─────────────────────────────────────────────────────────
+    # Controls
     st.markdown('<div class="controls-area">', unsafe_allow_html=True)
     st.markdown("---")
 
@@ -1191,8 +1144,8 @@ def main():
         num_cards = len(ss.hands[active_idx])
         st.caption(f"Playing Hand {active_idx + 1}  —  value: {active_val}")
 
-        # Double Down is only legal on a fresh two-card hand, and only if
-        # the bankroll has enough to match the existing bet.
+        #double Down is only legal on a fresh two-card hand, and only if
+        #the bankroll has enough to match the existing bet.
         can_double = num_cards == 2 and current_bet <= ss.bankroll
 
         h_col, s_col, d_col = st.columns(3)
@@ -1220,7 +1173,7 @@ def main():
             reset_bankroll()
             st.rerun()
 
-    # ── Table bottom rail ────────────────────────────────────────────────
+    #Table bottom rail
     st.markdown('</div>', unsafe_allow_html=True)
     st.markdown("""
     <div class="table-bottom-rail">
